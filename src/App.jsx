@@ -105,6 +105,39 @@ const C = {
 
 const INSTRUCTOR_PASSWORD = "tbi";
 
+const INSTRUCTORS = {
+  "Cantor David Childs": "cantorchilds@tbiport.org",
+  "Josh Blumenfeld":     "jb358@yahoo.com",
+};
+const SENDER_EMAIL = "progresstracker@tbiport.org";
+
+async function sendAssignmentEmail({learner, assignment}) {
+  const replyTo = INSTRUCTORS[learner.instructor] || "cantorchilds@tbiport.org";
+  const emails = [learner.email1, learner.email2, learner.email3].filter(Boolean);
+  if(!emails.length) return {ok:false, error:"No email addresses on file for this learner."};
+  try {
+    const res = await fetch("/.netlify/functions/send-email", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        to: emails,
+        from: SENDER_EMAIL,
+        replyTo,
+        subject: `New Assignment — ${learner.name}`,
+        learnerName: learner.name,
+        assignmentText: assignment.text,
+        assignmentDate: assignment.date,
+        trackerUrl: window.location.origin,
+      }),
+    });
+    const data = await res.json();
+    if(!res.ok) return {ok:false, error:data.error||"Email failed."};
+    return {ok:true};
+  } catch(e) {
+    return {ok:false, error:"Network error sending email."};
+  }
+}
+
 const DEFAULT_PART_LABELS = {
   1:"Part 1", 2:"Part 2",
   3:"Part 3", 4:"Additional Learning",
@@ -827,10 +860,11 @@ function PracticeSessions({learnerId,role}) {
 }
 
 // ── Assignments ────────────────────────────────────────────────────────────
-function Assignments({learnerId,role}) {
+function Assignments({learnerId,role,learner}) {
   const {isMobile}=useBreakpoint();
   const [assignments,setAssignments]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [newDate,setNewDate]=useState("");const [newText,setNewText]=useState("");const [confirmId,setConfirmId]=useState(null);const [saving,setSaving]=useState(false);
+  const [emailStatus,setEmailStatus]=useState({}); // {assignmentId: "sending"|"sent"|"error"}
 
   async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
@@ -840,6 +874,20 @@ function Assignments({learnerId,role}) {
   async function remove(id){await DB.deleteAssignment(id);setAssignments(prev=>prev.filter(a=>a.id!==id));}
   async function saveName(id,text){await DB.updateAssignment(id,{text});setAssignments(prev=>prev.map(a=>a.id===id?{...a,text}:a));}
   async function updateSubtasks(id,subtasks){await DB.updateAssignment(id,{subtasks});setAssignments(prev=>prev.map(a=>a.id===id?{...a,subtasks}:a));}
+
+  async function emailAssignment(a){
+    if(!learner){setEmailStatus(s=>({...s,[a.id]:"error:No learner data."}));return;}
+    setEmailStatus(s=>({...s,[a.id]:"sending"}));
+    const result=await sendAssignmentEmail({learner,assignment:a});
+    if(result.ok){
+      setEmailStatus(s=>({...s,[a.id]:"sent"}));
+      setTimeout(()=>setEmailStatus(s=>({...s,[a.id]:undefined})),3000);
+    } else {
+      setEmailStatus(s=>({...s,[a.id]:`error:${result.error}`}));
+    }
+  }
+
+  const hasEmails=learner&&(learner.email1||learner.email2||learner.email3);
 
   if(loading) return <LoadingSpinner message="Loading assignments…"/>;
   if(error) return <ErrorBanner message={error} onRetry={load}/>;
@@ -857,6 +905,7 @@ function Assignments({learnerId,role}) {
     {assignments.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No assignments yet.</p>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
       {assignments.map(a=>{
         const subs=a.subtasks||[];const subDone=subs.filter(s=>s.done).length;const [subInput,setSubInput]=useState("");
+        const eStatus=emailStatus[a.id];
         async function addSub(){if(!subInput.trim())return;const updated=[...subs,{id:genId(),text:subInput.trim(),done:false}];await updateSubtasks(a.id,updated);setSubInput("");}
         return <div key={a.id} style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
@@ -874,9 +923,16 @@ function Assignments({learnerId,role}) {
                   {role==="instructor"&&<button onClick={async()=>{const u=subs.filter(x=>x.id!==s.id);await updateSubtasks(a.id,u);}} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:13}}>✕</button>}
                 </div>)}
               </div>}
-              {role==="instructor"&&<div style={{display:"flex",gap:6}}>
-                <input value={subInput} onChange={e=>setSubInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSub()} placeholder="Add subtask…" style={{flex:1,padding:"4px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
+              {role==="instructor"&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <input value={subInput} onChange={e=>setSubInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSub()} placeholder="Add subtask…" style={{flex:1,minWidth:120,padding:"4px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
                 <Btn small color={C.blue} onClick={addSub}>+ Add</Btn>
+                {hasEmails&&<>
+                  {eStatus==="sending"&&<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Sending…</span>}
+                  {eStatus==="sent"&&<span style={{fontSize:12,color:C.green,fontFamily:"Raleway,sans-serif"}}>✓ Sent!</span>}
+                  {eStatus?.startsWith?.("error:")&&<span style={{fontSize:12,color:C.red,fontFamily:"Raleway,sans-serif"}}>{eStatus.slice(6)}</span>}
+                  {!eStatus&&<Btn small outline color={C.blue} onClick={()=>emailAssignment(a)}>✉ Email this assignment</Btn>}
+                </>}
+                {!hasEmails&&role==="instructor"&&<span style={{fontSize:11,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No emails on file</span>}
               </div>}
             </div>
             {role==="instructor"&&<button onClick={()=>setConfirmId(a.id)} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:18,marginTop:1,flexShrink:0}}>✕</button>}
@@ -1418,7 +1474,7 @@ export default function App() {
         <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,marginBottom:4}}>{currentLearnerData.name}</div>
         {currentLearnerData.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?16:18,fontWeight:"700",fontFamily:"Raleway,sans-serif",marginBottom:8}}>{currentLearnerData.hebrew_name}</div>}
         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-          {currentLearnerData.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{currentLearnerData.date_of_service}{currentLearnerData.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{currentLearnerData.hebrew_date}</span>}</div></div>}
+          {currentLearnerData.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(currentLearnerData.date_of_service)}{currentLearnerData.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{currentLearnerData.hebrew_date}</span>}</div></div>}
           {currentLearnerData.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{currentLearnerData.parashah}</div></div>}
         </div>
       </div>}
@@ -1473,19 +1529,37 @@ export default function App() {
       </div>}
 
       {/* Instructor learner info card */}
-      {selectedLearner&&role==="instructor"&&(()=>{const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);if(!l)return null;return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fit,minmax(140px,1fr))",gap:isMobile?12:16}}>
-        <div style={{gridColumn:isMobile?"1/-1":"auto"}}><div style={LS}>Learner</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:15,fontWeight:"600"}}>{l.hebrew_name}</div>}</div>
-        {l.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:16}}>{l.date_of_service}</div>{l.hebrew_date&&<div style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>{l.hebrew_date}</div>}</div>}
-        {l.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:16}}>{l.parashah}</div></div>}
-        <div><div style={LS}>Access Key</div>
-          {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
-            <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
-            <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
-          </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
-            <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
-          </div>}
+      {selectedLearner&&role==="instructor"&&(()=>{const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);if(!l)return null;return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fit,minmax(140px,1fr))",gap:isMobile?12:16,marginBottom:16}}>
+          <div style={{gridColumn:isMobile?"1/-1":"auto"}}><div style={LS}>Learner</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:15,fontWeight:"600"}}>{l.hebrew_name}</div>}</div>
+          {l.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:16}}>{formatServiceDate(l.date_of_service)}</div>{l.hebrew_date&&<div style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>{l.hebrew_date}</div>}</div>}
+          {l.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:16}}>{l.parashah}</div></div>}
+          <div><div style={LS}>Access Key</div>
+            {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
+              <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
+              <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
+            </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
+              <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
+            </div>}
+          </div>
+        </div>
+        {/* Instructor assignment + family emails */}
+        <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14,display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr 1fr",gap:12}}>
+          <div><div style={LS}>Instructor</div>
+            <select value={l.instructor||""} onChange={async e=>{const v=e.target.value;await DB.upsertLearner({...l,instructor:v});setLearners(prev=>prev.map(x=>x.id===l.id?{...x,instructor:v}:x));}}
+              style={{...IS,fontSize:13,padding:"6px 10px"}}>
+              <option value="">— Assign instructor —</option>
+              {Object.keys(INSTRUCTORS).map(name=><option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+          {["email1","email2","email3"].map((key,i)=><div key={key}>
+            <div style={LS}>Family Email {i+1}</div>
+            <input type="email" defaultValue={l[key]||""} placeholder="email@example.com"
+              onBlur={async e=>{const v=e.target.value.trim();if(v!==( l[key]||"")){await DB.upsertLearner({...l,[key]:v||null});setLearners(prev=>prev.map(x=>x.id===l.id?{...x,[key]:v||null}:x));}}}
+              style={{...IS,fontSize:13,padding:"6px 10px"}}/>
+          </div>)}
         </div>
       </div>;})()}
 
@@ -1496,7 +1570,7 @@ export default function App() {
 
       {selectedLearner&&<>
         {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)}/>}
-        {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role}/>}
+        {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
         {activeTab==="services"   &&<ServiceAttendance learnerId={selectedLearner} role={role}/>}
