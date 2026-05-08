@@ -1114,10 +1114,6 @@ function AddLearnerModal({onAdd,onClose}) {
     setAutoFilled(filled);
     setForm(f=>({...f, dateOfService:dateStr, parashah: entry.p ? entry.p+(entry.y?` (Year ${entry.y})`:"") : "", specialShabbat: entry.s||""}));
   }
-    const filled={parashah:entry.p,hebrewDate:entry.h,specialShabbat:entry.s||"",year:entry.y};
-    setAutoFilled(filled);
-    setForm(f=>({...f,dateOfService:dateStr,parashah:entry.p+(entry.y?` (Year ${entry.y})`:""),specialShabbat:entry.s||""}));
-  }
 
   const specialOptions=SPECIAL_SHABBAT_MAP[form.parashah?.split(" (")[0]]||[];
   const hasSpecial=specialOptions.length>0;
