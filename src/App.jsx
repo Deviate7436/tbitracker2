@@ -799,7 +799,6 @@ function ServiceAttendance({learnerId,role}) {
     setLoading(false);
   }
   useEffect(()=>{load();},[learnerId]);
-  useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
 
   async function update(key,val){
     if(val&&!isFriOrSat(val)){alert("Please select a Friday or Saturday.");return;}
@@ -839,7 +838,6 @@ function PracticeSessions({learnerId,role}) {
 
   async function load(){setLoading(true);try{const r=await DB.getSessions(learnerId);setSessions(r||[]);}catch(e){setError("Failed to load sessions.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
-  useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
 
   async function add(){
     if(!newDate)return;setSaving(true);
@@ -939,7 +937,6 @@ function Assignments({learnerId,role,learner}) {
 
   async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
-  useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
 
   async function add(){if(!newText.trim())return;setSaving(true);const a={id:genId(),learner_id:learnerId,date:newDate||new Date().toISOString().split("T")[0],text:newText.trim(),done:false,subtasks:[]};await DB.insertAssignment(a);setAssignments(prev=>[a,...prev]);setNewDate("");setNewText("");setSaving(false);}
   async function toggle(id,done){await DB.updateAssignment(id,{done:!done});setAssignments(prev=>prev.map(a=>a.id===id?{...a,done:!done}:a));}
