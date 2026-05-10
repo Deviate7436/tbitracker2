@@ -1100,6 +1100,60 @@ function SmartReview({learnerId}) {
     </div>}
   </div>;
 }
+// ── Learner Header Card ────────────────────────────────────────────────────
+function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
+  const [showCountdown,setShowCountdown]=useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_showCountdown")||"true");}catch{return true;}});
+  useEffect(()=>{try{localStorage.setItem("tbi_showCountdown",JSON.stringify(showCountdown));}catch{}},[showCountdown]);
+  const daysUntil=learner.date_of_service?Math.ceil((new Date(learner.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
+  return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+      <div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,marginBottom:4}}>{learner.name}</div>
+        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?16:18,fontWeight:"700",fontFamily:"Raleway,sans-serif",marginBottom:8}}>{learner.hebrew_name}</div>}
+      </div>
+      {daysUntil!==null&&daysUntil>0&&<button onClick={()=>setShowCountdown(s=>!s)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 10px",fontSize:11,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",flexShrink:0}}>{showCountdown?"Hide countdown":"Show countdown"}</button>}
+    </div>
+    {showCountdown&&daysUntil!==null&&daysUntil>0&&<div style={{background:C.lightBlue,borderRadius:10,padding:"10px 16px",marginBottom:12,display:"inline-block"}}>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.blue,fontSize:14}}>📅 {daysUntil} day{daysUntil!==1?"s":""} until your service</span>
+    </div>}
+    <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+      {learner.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
+      {learner.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
+    </div>
+  </div>;
+}
+
+// ── Learner Info Editor ────────────────────────────────────────────────────
+function LearnerInfoEditor({l,isMobile,onSave}) {
+  const [instrDraft,setInstrDraft]=useState(l.instructor||"");
+  const [email1Draft,setEmail1Draft]=useState(l.email1||"");
+  const [email2Draft,setEmail2Draft]=useState(l.email2||"");
+  const [email3Draft,setEmail3Draft]=useState(l.email3||"");
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{setInstrDraft(l.instructor||"");setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");},[l.id]);
+  async function save(){
+    setSaving(true);
+    const patch={...l,instructor:instrDraft||null,email1:email1Draft.trim()||null,email2:email2Draft.trim()||null,email3:email3Draft.trim()||null};
+    await DB.upsertLearner(patch);
+    onSave(patch);
+    setSaving(false);
+  }
+  return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>
+      <div><div style={LS}>Instructor</div>
+        <select value={instrDraft} onChange={e=>setInstrDraft(e.target.value)} style={{...IS,fontSize:13,padding:"6px 10px"}}>
+          <option value="">— Assign instructor —</option>
+          {Object.keys(INSTRUCTORS).map(name=><option key={name} value={name}>{name}</option>)}
+        </select>
+      </div>
+      <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+    </div>
+    <Btn onClick={save} color={C.blue} small disabled={saving}>{saving?"Saving…":"Save Info"}</Btn>
+  </div>;
+}
+
 // ── Login ──────────────────────────────────────────────────────────────────
 function LoginScreen({onLogin}) {
   const {isMobile}=useBreakpoint();
@@ -1543,28 +1597,7 @@ export default function App() {
     <div style={{maxWidth:isDesktop?960:700,margin:"0 auto",padding:isMobile?"16px 12px":"28px 20px"}}>
 
       {/* Learner header (learner role) */}
-      {role==="learner"&&currentLearnerData&&(()=>{
-        const ld=currentLearnerData;
-        const [showCountdown,setShowCountdown]=React.useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_showCountdown")||"true");}catch{return true;}});
-        React.useEffect(()=>{try{localStorage.setItem("tbi_showCountdown",JSON.stringify(showCountdown));}catch{}},[showCountdown]);
-        const daysUntil=ld.date_of_service?Math.ceil((new Date(ld.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
-        return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-            <div>
-              <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,marginBottom:4}}>{ld.name}</div>
-              {ld.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?16:18,fontWeight:"700",fontFamily:"Raleway,sans-serif",marginBottom:8}}>{ld.hebrew_name}</div>}
-            </div>
-            {daysUntil!==null&&daysUntil>0&&<button onClick={()=>setShowCountdown(s=>!s)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 10px",fontSize:11,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",flexShrink:0}}>{showCountdown?"Hide countdown":"Show countdown"}</button>}
-          </div>
-          {showCountdown&&daysUntil!==null&&daysUntil>0&&<div style={{background:C.lightBlue,borderRadius:10,padding:"10px 16px",marginBottom:12,display:"inline-block"}}>
-            <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.blue,fontSize:14}}>📅 {daysUntil} day{daysUntil!==1?"s":""} until your service</span>
-          </div>}
-          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-            {ld.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(ld.date_of_service)}{ld.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{ld.hebrew_date}</span>}</div></div>}
-            {ld.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{ld.parashah}</div></div>}
-          </div>
-        </div>;
-      })()}
+      {role==="learner"&&currentLearnerData&&<LearnerHeaderCard learner={currentLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
 
       {/* Instructor learner selector — dropdown sorted by date */}
       {role==="instructor"&&<div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
@@ -1638,35 +1671,7 @@ export default function App() {
           </div>
         </div>
         {/* Instructor assignment + contact emails + save */}
-        {(()=>{
-          const [instrDraft,setInstrDraft]=React.useState(l.instructor||"");
-          const [email1Draft,setEmail1Draft]=React.useState(l.email1||"");
-          const [email2Draft,setEmail2Draft]=React.useState(l.email2||"");
-          const [email3Draft,setEmail3Draft]=React.useState(l.email3||"");
-          const [infoSaving,setInfoSaving]=React.useState(false);
-          React.useEffect(()=>{setInstrDraft(l.instructor||"");setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");},[l.id]);
-          async function saveInfo(){
-            setInfoSaving(true);
-            const patch={...l,instructor:instrDraft||null,email1:email1Draft.trim()||null,email2:email2Draft.trim()||null,email3:email3Draft.trim()||null};
-            await DB.upsertLearner(patch);
-            setLearners(prev=>prev.map(x=>x.id===l.id?patch:x));
-            setInfoSaving(false);
-          }
-          return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>
-              <div><div style={LS}>Instructor</div>
-                <select value={instrDraft} onChange={e=>setInstrDraft(e.target.value)} style={{...IS,fontSize:13,padding:"6px 10px"}}>
-                  <option value="">— Assign instructor —</option>
-                  {Object.keys(INSTRUCTORS).map(name=><option key={name} value={name}>{name}</option>)}
-                </select>
-              </div>
-              <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-              <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-              <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-            </div>
-            <Btn onClick={saveInfo} color={C.blue} small disabled={infoSaving}>{infoSaving?"Saving…":"Save Info"}</Btn>
-          </div>;
-        })()}
+        <LearnerInfoEditor l={l} isMobile={isMobile} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
       </div>;})()}
 
       {/* Nav tabs */}
