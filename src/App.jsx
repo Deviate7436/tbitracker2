@@ -33,6 +33,7 @@ const DB = {
   // Learners
   getLearners: () => sb("learners?select=*&order=name"),
   upsertLearner: (l) => sb("learners?on_conflict=id", "POST", l, {"Prefer":"resolution=merge-duplicates,return=representation"}),
+  updateLearnerLastSignedIn: (id, lastSignedInAt) => sb(`learners?id=eq.${id}`, "PATCH", {last_signed_in_at:lastSignedInAt}, {"Prefer":"return=representation"}),
   deleteLearner: (id) => sb(`learners?id=eq.${id}`, "DELETE"),
 
   // Prayers
@@ -1161,7 +1162,12 @@ function LoginScreen({onLogin}) {
     try{
       const rows=await DB.getLearners();
       const learner=(rows||[]).find(l=>l.access_key&&l.access_key.toUpperCase()===accessKey.toUpperCase());
-      if(learner)onLogin("learner",learner.id);
+      if(learner){
+        const lastSignedInAt=new Date().toISOString();
+        try{await DB.updateLearnerLastSignedIn(learner.id,lastSignedInAt);learner.last_signed_in_at=lastSignedInAt;}
+        catch(e){console.error("Could not update learner last sign-in:",e);}
+        onLogin("learner",learner.id);
+      }
       else setError("Access key not found. Check with your instructor.");
     }catch(e){setError("Connection error. Please try again.");}
     setLoading(false);
@@ -1542,6 +1548,13 @@ export default function App() {
     return `${parseInt(m)}/${parseInt(d)}/${y}`;
   }
 
+  function formatLastSignedIn(value){
+    if(!value) return "Never";
+    const date=new Date(value);
+    if(Number.isNaN(date.getTime())) return "Never";
+    return date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+  }
+
   const activeLearner=role==="instructor"?learners.find(l=>l.id===selectedLearner):currentLearnerData;
   const tabs=role==="instructor"
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"practicelog",label:"🎵 Practice Log"},{id:"services",label:"🕍 Shabbat Attendance"}]
@@ -1656,6 +1669,7 @@ export default function App() {
           <div><div style={LS}>Parashah</div>
             <input defaultValue={l.parashah||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==( l.parashah||"")){await DB.upsertLearner({...l,parashah:v||null});setLearners(prev=>prev.map(x=>x.id===l.id?{...x,parashah:v||null}:x));}}} placeholder="Parashah name…" style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:13,fontFamily:"Raleway,sans-serif",width:"100%",boxSizing:"border-box"}}/>
           </div>
+          <div><div style={LS}>Last Signed In</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:l.last_signed_in_at?C.navy:C.midGray,fontSize:14}}>{formatLastSignedIn(l.last_signed_in_at)}</div></div>
           <div><div style={LS}>Access Key</div>
             {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
