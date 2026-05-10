@@ -561,8 +561,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onDelete,onNameSave,
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {hasAudio&&!hasPdf
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio{hasDefaultAudio&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>
-              :null
-              :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No audio</span>}
+              :null}
             {prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
             {prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎯 Target: {prayer.target_date}</span>}
           </div>
