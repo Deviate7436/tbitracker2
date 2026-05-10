@@ -112,8 +112,19 @@ const INSTRUCTORS = {
 };
 const SENDER_EMAIL = "progresstracker@tbiport.org";
 
+function parseInstructorNames(value) {
+  return String(value || "").split(",").map(s => s.trim()).filter(Boolean);
+}
+function formatInstructorNames(names) {
+  return names.filter(Boolean).join(", ");
+}
+function instructorEmails(value) {
+  const emails = parseInstructorNames(value).map(name => INSTRUCTORS[name]).filter(Boolean);
+  return emails.length ? emails.join(",") : "cantorchilds@tbiport.org";
+}
+
 async function sendAssignmentEmail({learner, assignment}) {
-  const replyTo = INSTRUCTORS[learner.instructor] || "cantorchilds@tbiport.org";
+  const replyTo = instructorEmails(learner.instructor);
   const emails = [learner.email1, learner.email2, learner.email3].filter(Boolean);
   if(!emails.length) return {ok:false, error:"No email addresses on file for this learner."};
   try {
@@ -992,10 +1003,24 @@ function SmartReview({learnerId}) {
   const [loading,setLoading]=useState(true);
   const [queue,setQueue]=useState([]);const [idx,setIdx]=useState(0);const [sessionDone,setSessionDone]=useState(false);const [reviewedItems,setReviewedItems]=useState([]);const [showPdfModal,setShowPdfModal]=useState(false);const [showAudioModal,setShowAudioModal]=useState(false);
 
+  function dmKey(name,part){return `${name}|${part}`;}
+
   async function load(){
     setLoading(true);
-    const rows=await DB.getPrayers(learnerId);
-    const ps=(rows||[]).filter(p=>p.status!=="Not Started").sort((a,b)=>(a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1);
+    const [rows,defaultRows]=await Promise.all([DB.getPrayers(learnerId),DB.getDefaultMedia()]);
+    const defaults={};
+    (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={pdf:d.pdf,audio:d.audio,pdf_name:d.pdf_name,audio_name:d.audio_name};});
+    const ps=(rows||[]).filter(p=>p.status!=="Not Started").map(p=>{
+      const dm=defaults[dmKey(p.name,p.part)]||{};
+      return {...p,
+        effective_pdf:p.pdf||dm.pdf||null,
+        effective_pdf_name:p.pdf_name||dm.pdf_name||null,
+        effective_audio:p.audio||dm.audio||null,
+        effective_audio_name:p.audio_name||dm.audio_name||null,
+        has_default_pdf:!p.pdf&&!!dm.pdf,
+        has_default_audio:!p.audio&&!!dm.audio,
+      };
+    }).sort((a,b)=>(a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1);
     setQueue(ps);setLoading(false);
   }
   useEffect(()=>{load();},[learnerId]);
@@ -1044,11 +1069,13 @@ function SmartReview({learnerId}) {
   if(!current)return null;
 
   const days=daysSince(current.last_reviewed);
-  const hasPdf=!!current.pdf;const hasAudio=!!current.audio;
+  const effectivePdf=current.effective_pdf||current.pdf||null;const effectivePdfName=current.effective_pdf_name||current.pdf_name||current.name;
+  const effectiveAudio=current.effective_audio||current.audio||null;const effectiveAudioName=current.effective_audio_name||current.audio_name||current.name;
+  const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
   return <div>
-    {showPdfModal&&hasPdf&&<PdfModal url={current.pdf} name={current.pdf_name} audioUrl={current.audio} audioName={current.audio_name} onClose={()=>setShowPdfModal(false)}/>}
-    {showAudioModal&&hasAudio&&!hasPdf&&<AudioOnlyModal url={current.audio} name={current.audio_name} onClose={()=>setShowAudioModal(false)}/>}
+    {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)}/>}
+    {showAudioModal&&hasAudio&&!hasPdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowAudioModal(false)}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <h3 style={{margin:0,fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18}}>🧠 Smart Review</h3>
       <span style={{color:C.midGray,fontSize:13,fontFamily:"Raleway,sans-serif"}}>{idx+1} / {total}</span>
@@ -1066,10 +1093,10 @@ function SmartReview({learnerId}) {
           {days!==null&&<span style={{fontSize:12,color:C.midGray,border:"1px solid #e9ecef",borderRadius:20,padding:"3px 10px",fontFamily:"Raleway,sans-serif"}}>{days===0?"Reviewed today":`${days}d ago`}</span>}
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:hasPdf&&hasAudio?0:8}}>
-          {hasPdf&&<button onClick={()=>setShowPdfModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page</button>}
-          {hasAudio&&!hasPdf&&<button onClick={()=>setShowAudioModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>}
+          {hasPdf&&<button onClick={()=>setShowPdfModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page{current.has_default_pdf&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>}
+          {hasAudio&&!hasPdf&&<button onClick={()=>setShowAudioModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio{current.has_default_audio&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>}
         </div>
-        {hasAudio&&hasPdf&&<div style={{marginBottom:8}}><AudioPlayer url={current.audio} name={current.audio_name||current.name}/></div>}
+        {hasAudio&&hasPdf&&<div style={{marginBottom:8}}><AudioPlayer url={effectiveAudio} name={effectiveAudioName}/></div>}
         {current.subtasks&&current.subtasks.length>0&&<div style={{background:"#fafbfc",borderRadius:8,padding:"8px 12px"}}>
           <div style={{fontSize:11,color:C.midGray,textTransform:"uppercase",letterSpacing:1,fontWeight:"700",marginBottom:6,fontFamily:"Raleway,sans-serif"}}>Subtasks</div>
           {current.subtasks.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
@@ -1123,32 +1150,49 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
 
 // ── Learner Info Editor ────────────────────────────────────────────────────
 function LearnerInfoEditor({l,isMobile,onSave}) {
-  const [instrDraft,setInstrDraft]=useState(l.instructor||"");
+  const [instrDraft,setInstrDraft]=useState(parseInstructorNames(l.instructor));
   const [email1Draft,setEmail1Draft]=useState(l.email1||"");
   const [email2Draft,setEmail2Draft]=useState(l.email2||"");
   const [email3Draft,setEmail3Draft]=useState(l.email3||"");
   const [saving,setSaving]=useState(false);
-  useEffect(()=>{setInstrDraft(l.instructor||"");setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");},[l.id]);
-  async function save(){
+  useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");},[l.id]);
+
+  async function savePatch(fields){
     setSaving(true);
-    const patch={...l,instructor:instrDraft||null,email1:email1Draft.trim()||null,email2:email2Draft.trim()||null,email3:email3Draft.trim()||null};
+    const patch={...l,...fields};
     await DB.upsertLearner(patch);
     onSave(patch);
     setSaving(false);
   }
+
+  async function toggleInstructor(name){
+    const next=instrDraft.includes(name)?instrDraft.filter(n=>n!==name):[...instrDraft,name];
+    setInstrDraft(next);
+    await savePatch({instructor:formatInstructorNames(next)||null});
+  }
+
+  async function saveEmails(){
+    const fields={email1:email1Draft.trim()||null,email2:email2Draft.trim()||null,email3:email3Draft.trim()||null};
+    if(fields.email1===(l.email1||null)&&fields.email2===(l.email2||null)&&fields.email3===(l.email3||null)) return;
+    await savePatch(fields);
+  }
+
   return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 1fr 1fr 1fr",gap:12,marginBottom:6}}>
       <div><div style={LS}>Instructor</div>
-        <select value={instrDraft} onChange={e=>setInstrDraft(e.target.value)} style={{...IS,fontSize:13,padding:"6px 10px"}}>
-          <option value="">— Assign instructor —</option>
-          {Object.keys(INSTRUCTORS).map(name=><option key={name} value={name}>{name}</option>)}
-        </select>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
+            <input type="checkbox" checked={instrDraft.includes(name)} onChange={()=>toggleInstructor(name)} style={{accentColor:C.blue}}/>
+            <span style={{fontWeight:"700"}}>{name}</span>
+            <span style={{color:C.midGray,fontSize:11}}>{email}</span>
+          </label>)}
+        </div>
       </div>
-      <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-      <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-      <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
     </div>
-    <Btn onClick={save} color={C.blue} small disabled={saving}>{saving?"Saving…":"Save Info"}</Btn>
+    <div style={{fontSize:11,color:saving?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",minHeight:16}}>{saving?"Saving…":"Changes save automatically."}</div>
   </div>;
 }
 
