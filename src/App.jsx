@@ -6,6 +6,45 @@ const LOGO_B64 = "/9j/4AAQSkZJRgABAQAAkACQAAD/4QCMRXhpZgAATU0AKgAAAAgABQESAAMAAA
 // ── Supabase ───────────────────────────────────────────────────────────────
 const SUPA_URL = "https://ldhhghraxtmkwhuwidiq.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGhnaHJheHRta3dodXdpZGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMTI2OTgsImV4cCI6MjA5MzY4ODY5OH0.Pm7Rv7_Q9Vm6Pscwb5Yffr0swBlmttzt4V59WfL1KUQ";
+const STORAGE_AUDIO_BUCKET = "tbi-recordings";
+
+function safeStorageFileName(name) {
+  const base = String(name || "recording")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 90);
+  return base || "recording";
+}
+function encodeStoragePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+async function uploadAudioToStorage(file) {
+  if(!file) throw new Error("No file selected.");
+  if(!file.type?.startsWith("audio/") && !/\.(mp3|m4a|wav|aac|ogg|opus)$/i.test(file.name || "")) {
+    throw new Error("Please choose an audio file, such as MP3, M4A, WAV, AAC, or OGG.");
+  }
+  const path = `recordings/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeStorageFileName(file.name)}`;
+  const encodedPath = encodeStoragePath(path);
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${STORAGE_AUDIO_BUCKET}/${encodedPath}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "x-upsert": "false",
+    },
+    body: file,
+  });
+  if(!res.ok) {
+    const e = await res.text();
+    console.error("Supabase Storage upload error:", e);
+    throw new Error(e || "Upload failed. Check that the tbi-recordings storage bucket and upload policy exist.");
+  }
+  return `${SUPA_URL}/storage/v1/object/public/${STORAGE_AUDIO_BUCKET}/${encodedPath}`;
+}
 
 async function sb(path, method="GET", body=null, extra_headers={}) {
   const headers = {
@@ -481,7 +520,22 @@ function DefaultMediaPanel({prayer,defaultMedia,bankRecordings,onSetDefaultMedia
 
 // ── Recording Bank Panel ───────────────────────────────────────────────────
 function RecordingBankPanel({bankRecordings,onBankChange}) {
-  const [open,setOpen]=useState(false);const [newName,setNewName]=useState("");const [newUrl,setNewUrl]=useState("");const [newNotes,setNewNotes]=useState("");const [saving,setSaving]=useState(false);const [editId,setEditId]=useState(null);const [editDraft,setEditDraft]=useState({});
+  const [open,setOpen]=useState(false);const [newName,setNewName]=useState("");const [newUrl,setNewUrl]=useState("");const [newNotes,setNewNotes]=useState("");const [saving,setSaving]=useState(false);const [uploading,setUploading]=useState(false);const [editId,setEditId]=useState(null);const [editDraft,setEditDraft]=useState({});
+
+  async function handleAudioFile(file){
+    if(!file)return;
+    setUploading(true);
+    try{
+      const publicUrl=await uploadAudioToStorage(file);
+      setNewUrl(publicUrl);
+      if(!newName.trim()) setNewName((file.name||"Recording").replace(/\.[^.]+$/, ""));
+      if(!newNotes.trim()) setNewNotes("Uploaded to tracker");
+    }catch(e){
+      alert(`Audio upload failed. ${e.message || e}`);
+    }finally{
+      setUploading(false);
+    }
+  }
 
   async function addRecording(){
     if(!newName.trim()||!newUrl.trim())return;
@@ -511,15 +565,22 @@ function RecordingBankPanel({bankRecordings,onBankChange}) {
       <span style={{color:C.midGray,fontSize:18}}>{open?"▲":"▼"}</span>
     </button>
     {open&&<div style={{padding:"0 20px 20px",borderTop:"1px solid #f0f2f5"}}>
-      <p style={{color:C.midGray,fontSize:12,margin:"12px 0",fontFamily:"Raleway,sans-serif"}}>Save recordings here by name. Assign them as defaults from inside any prayer row.</p>
+      <p style={{color:C.midGray,fontSize:12,margin:"12px 0",fontFamily:"Raleway,sans-serif"}}>Save recordings here by name. Upload audio directly to the tracker, or paste a direct audio URL. Assign recordings as defaults from inside any prayer row.</p>
       {/* Add new */}
       <div style={{background:"#fafbfc",borderRadius:10,padding:"14px 16px",marginBottom:16,border:"1px solid #e9ecef"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
           <div><label style={LS}>Name</label><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Standard Haftarah Trope" style={{...IS,fontSize:13}}/></div>
-          <div><label style={LS}>Google Drive URL</label><input value={newUrl} onChange={e=>setNewUrl(e.target.value)} placeholder="Paste Drive link…" style={{...IS,fontSize:13}}/></div>
+          <div><label style={LS}>Audio URL</label><input value={newUrl} onChange={e=>setNewUrl(e.target.value)} placeholder="Paste audio link, or upload below…" style={{...IS,fontSize:13}}/></div>
         </div>
-        <div style={{marginBottom:10}}><label style={LS}>Notes (optional)</label><input value={newNotes} onChange={e=>setNewNotes(e.target.value)} placeholder="Cantor recording, 2024" style={{...IS,fontSize:13}}/></div>
-        <Btn onClick={addRecording} color={C.blue} small disabled={saving}>{saving?"Saving…":"+ Add Recording"}</Btn>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div>
+            <label style={LS}>Upload Audio</label>
+            <input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.opus" onChange={e=>handleAudioFile(e.target.files?.[0])} disabled={uploading} style={{...IS,fontSize:12,padding:"8px 10px",background:"white"}}/>
+            <p style={{fontSize:11,color:C.midGray,margin:"4px 0 0",fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading…":"MP3 or M4A recommended for best browser playback."}</p>
+          </div>
+          <div><label style={LS}>Notes (optional)</label><input value={newNotes} onChange={e=>setNewNotes(e.target.value)} placeholder="Cantor recording, 2024" style={{...IS,fontSize:13}}/></div>
+        </div>
+        <Btn onClick={addRecording} color={C.blue} small disabled={saving||uploading||!newName.trim()||!newUrl.trim()}>{saving?"Saving…":"+ Add Recording"}</Btn>
       </div>
       {/* List */}
       {bankRecordings.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif"}}>No recordings yet.</p>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -527,7 +588,7 @@ function RecordingBankPanel({bankRecordings,onBankChange}) {
           {editId===r.id?<div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
               <input value={editDraft.name??r.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} style={{...IS,fontSize:13}} placeholder="Name"/>
-              <input value={editDraft.url??r.url} onChange={e=>setEditDraft(d=>({...d,url:e.target.value}))} style={{...IS,fontSize:13}} placeholder="Drive URL"/>
+              <input value={editDraft.url??r.url} onChange={e=>setEditDraft(d=>({...d,url:e.target.value}))} style={{...IS,fontSize:13}} placeholder="Audio URL"/>
             </div>
             <input value={editDraft.notes??r.notes??""} onChange={e=>setEditDraft(d=>({...d,notes:e.target.value}))} style={{...IS,fontSize:13,marginBottom:8}} placeholder="Notes (optional)"/>
             <div style={{display:"flex",gap:8}}><Btn small color={C.blue} onClick={()=>saveEdit(r.id)}>Save</Btn><Btn small outline color={C.navy} onClick={()=>{setEditId(null);setEditDraft({});}}>Cancel</Btn></div>
