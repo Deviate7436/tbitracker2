@@ -7,6 +7,7 @@ const LOGO_B64 = "/9j/4AAQSkZJRgABAQAAkACQAAD/4QCMRXhpZgAATU0AKgAAAAgABQESAAMAAA
 const SUPA_URL = "https://ldhhghraxtmkwhuwidiq.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkaGhnaHJheHRta3dodXdpZGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMTI2OTgsImV4cCI6MjA5MzY4ODY5OH0.Pm7Rv7_Q9Vm6Pscwb5Yffr0swBlmttzt4V59WfL1KUQ";
 const STORAGE_AUDIO_BUCKET = "tbi-recordings";
+const STORAGE_PDF_BUCKET = "tbi-pdfs";
 
 function safeStorageFileName(name) {
   const base = String(name || "recording")
@@ -44,6 +45,30 @@ async function uploadAudioToStorage(file) {
     throw new Error(e || "Upload failed. Check that the tbi-recordings storage bucket and upload policy exist.");
   }
   return `${SUPA_URL}/storage/v1/object/public/${STORAGE_AUDIO_BUCKET}/${encodedPath}`;
+}
+
+async function uploadPdfToStorage(file) {
+  if(!file) throw new Error("No file selected.");
+  const looksLikePdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+  if(!looksLikePdf) throw new Error("Please choose a PDF file.");
+  const path = `pdfs/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeStorageFileName(file.name || "document.pdf")}`;
+  const encodedPath = encodeStoragePath(path);
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${STORAGE_PDF_BUCKET}/${encodedPath}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": "application/pdf",
+      "x-upsert": "false",
+    },
+    body: file,
+  });
+  if(!res.ok) {
+    const e = await res.text();
+    console.error("Supabase PDF Storage upload error:", e);
+    throw new Error(e || "Upload failed. Check that the tbi-pdfs storage bucket and upload policy exist.");
+  }
+  return `${SUPA_URL}/storage/v1/object/public/${STORAGE_PDF_BUCKET}/${encodedPath}`;
 }
 
 async function sb(path, method="GET", body=null, extra_headers={}) {
@@ -429,92 +454,114 @@ function AudioPlayer({url,name}) {
   </div>;
 }
 
-function DriveLinkInput({label,value,hasLink,onChange,onRemove}) {
+function DriveLinkInput({label,value,hasLink,onChange,onRemove,placeholder}) {
   const [editing,setEditing]=useState(false);const [draft,setDraft]=useState(value||"");
-  if(!editing&&!hasLink) return <button onClick={()=>setEditing(true)} style={{padding:"5px 12px",borderRadius:6,border:"1.5px dashed #adb5bd",background:"transparent",color:C.midGray,fontSize:12,cursor:"pointer"}}>+ Paste {label} Link</button>;
+  if(!editing&&!hasLink) return <button onClick={()=>setEditing(true)} style={{padding:"5px 12px",borderRadius:6,border:"1.5px dashed #adb5bd",background:"transparent",color:C.midGray,fontSize:12,cursor:"pointer"}}>+ Paste {label} URL</button>;
   if(!editing&&hasLink) return <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.blue,fontWeight:"700"}}>✓ {label} linked</span><button onClick={()=>setEditing(true)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:11,textDecoration:"underline"}}>edit</button><button onClick={onRemove} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13}}>✕</button></div>;
-  return <div style={{display:"flex",gap:6,alignItems:"center"}}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder={`Paste Google Drive link…`} style={{flex:1,padding:"6px 10px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:12,fontFamily:"Raleway,sans-serif"}} autoFocus/><Btn small color={C.blue} onClick={()=>{onChange(draft.trim());setEditing(false);}}>Save</Btn><button onClick={()=>{setDraft(value||"");setEditing(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button></div>;
+  return <div style={{display:"flex",gap:6,alignItems:"center"}}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder={placeholder||`Paste direct ${label.toLowerCase()} URL…`} style={{flex:1,padding:"6px 10px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:12,fontFamily:"Raleway,sans-serif"}} autoFocus/><Btn small color={C.blue} onClick={()=>{onChange(draft.trim());setEditing(false);}}>Save</Btn><button onClick={()=>{setDraft(value||"");setEditing(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button></div>;
 }
 
-// ── Instructor Review Panel ────────────────────────────────────────────────
-function InstructorReviewPanel({prayer,onUpdate}) {
-  const [note,setNote]=useState("");const [showHistory,setShowHistory]=useState(false);const [saving,setSaving]=useState(false);
-  const reviews=prayer.instructor_reviews||[];
-  async function logReview(){
-    setSaving(true);
-    const updated=[{id:genId(),date:new Date().toISOString().split("T")[0],note:note.trim()},...reviews];
-    await DB.updatePrayer(prayer.id,{instructor_reviews:updated});
-    onUpdate({...prayer,instructor_reviews:updated});
-    setNote("");setSaving(false);
+function PdfUploadControl({label,value,name,onUploaded,onRemove}) {
+  const [uploading,setUploading]=useState(false);
+  async function handleFile(file){
+    if(!file)return;
+    setUploading(true);
+    try{
+      const url=await uploadPdfToStorage(file);
+      const cleanName=(file.name||"PDF").replace(/\.pdf$/i,"");
+      await onUploaded(url,cleanName);
+    }catch(e){
+      alert(`PDF upload failed. ${e.message || e}`);
+    }finally{setUploading(false);}
   }
-  return <div style={{borderTop:"1px solid #e9ecef",marginTop:12,paddingTop:12}}>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-      <span style={{fontSize:11,color:C.darkBlue,fontWeight:"700",textTransform:"uppercase",letterSpacing:1,fontFamily:"Raleway,sans-serif"}}>📋 Lesson Reviews</span>
-      {reviews.length>0&&<span style={{fontSize:11,background:C.lightBlue,color:C.blue,borderRadius:20,padding:"1px 8px",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>{reviews.length}×</span>}
-      {reviews.length>0&&<button onClick={()=>setShowHistory(h=>!h)} style={{fontSize:11,color:C.midGray,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{showHistory?"Hide":"Show history"}</button>}
+  return <div style={{display:"flex",flexDirection:"column",gap:6,minWidth:190}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      {value?<span style={{fontSize:12,color:C.blue,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {name||label||"PDF"} uploaded</span>:<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>No PDF uploaded</span>}
+      {value&&<button onClick={onRemove} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>}
     </div>
-    {reviews.length>0&&<div style={{fontSize:11,color:C.midGray,marginBottom:8,fontFamily:"Raleway,sans-serif"}}>Last: <strong style={{color:C.navy}}>{reviews[0].date}</strong>{reviews[0].note&&<span> — {reviews[0].note}</span>}</div>}
-    {showHistory&&<div style={{marginBottom:8,display:"flex",flexDirection:"column",gap:4,maxHeight:120,overflowY:"auto"}}>
-      {reviews.map(r=><div key={r.id} style={{fontSize:11,padding:"4px 8px",background:"#f8f9fa",borderRadius:6,color:C.navy,fontFamily:"Raleway,sans-serif"}}><strong>{r.date}</strong>{r.note&&<span style={{color:C.midGray}}> — {r.note}</span>}</div>)}
-    </div>}
-    <div style={{display:"flex",gap:6}}>
-      <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Optional note…" style={{flex:1,padding:"5px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}} onKeyDown={e=>e.key==="Enter"&&logReview()}/>
-      <Btn onClick={logReview} small color={C.darkBlue} disabled={saving}>{saving?"Saving…":"Log Review"}</Btn>
-    </div>
+    <input type="file" accept="application/pdf,.pdf" onChange={e=>handleFile(e.target.files?.[0])} disabled={uploading} style={{...IS,fontSize:12,padding:"8px 10px",background:"white"}}/>
+    <p style={{fontSize:11,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading PDF…":"Upload a PDF to store it directly in the tracker."}</p>
   </div>;
 }
 
-// ── Default Media Panel (inside instructor's expanded prayer row) ───────────
-function DefaultMediaPanel({prayer,defaultMedia,bankRecordings,onSetDefaultMedia}) {
-  const [swapPrompt,setSwapPrompt]=useState(null); // {field, url, name}
-  const dm=defaultMedia||{};
-
-  async function applyDefault(patch,applyAll) {
-    const existing=dm.id?dm:null;
-    const row={id:existing?.id||genId(),prayer_name:prayer.name,part:prayer.part,...dm,...patch};
-    await DB.upsertDefaultMedia(row);
-    onSetDefaultMedia(prayer.name,prayer.part,row);
-    setSwapPrompt(null);
+function LessonReviewPanel({prayer,onLinkUpdate}) {
+  const today=new Date().toISOString().split("T")[0];
+  const [date,setDate]=useState(prayer.last_reviewed||today);
+  const [showHistory,setShowHistory]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const reviews=prayer.instructor_reviews||[];
+  useEffect(()=>{setDate(prayer.last_reviewed||today);},[prayer.id,prayer.last_reviewed]);
+  async function log(){
+    if(!date)return;
+    setSaving(true);
+    const updated=[{id:genId(),date,note:""},...reviews];
+    await onLinkUpdate(prayer.id,{last_reviewed:date,instructor_reviews:updated});
+    setSaving(false);
   }
-
-  function requestSwap(field,url,name) {
-    if(dm[field]) setSwapPrompt({field,url,name});
-    else applyDefault({[field]:url,[field==="audio"?"audio_name":"pdf_name"]:name});
-  }
-
-  const hasDfPdf=!!dm.pdf; const hasDfAudio=!!dm.audio;
-  return <div style={{borderTop:"1px solid #e9ecef",paddingTop:12}}>
-    {swapPrompt&&<div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000}}>
-      <div style={{background:"white",borderRadius:16,padding:"28px 32px",maxWidth:380,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",textAlign:"center"}}>
-        <div style={{fontSize:28,marginBottom:12}}>🔄</div>
-        <p style={{fontFamily:"Raleway,sans-serif",color:C.navy,fontSize:15,margin:"0 0 8px",fontWeight:"700"}}>Apply this change to all learners?</p>
-        <p style={{fontFamily:"Raleway,sans-serif",color:C.midGray,fontSize:13,margin:"0 0 24px"}}>This will update the default {swapPrompt.field} for every learner who doesn't have a personal override.</p>
-        <div style={{display:"flex",gap:12}}>
-          <Btn onClick={()=>applyDefault({[swapPrompt.field]:swapPrompt.url,[swapPrompt.field==="audio"?"audio_name":"pdf_name"]:swapPrompt.name},true)} color={C.blue} style={{flex:1}}>Yes, update all</Btn>
-          <Btn onClick={()=>{applyDefault({[swapPrompt.field]:swapPrompt.url,[swapPrompt.field==="audio"?"audio_name":"pdf_name"]:swapPrompt.name},false);}} outline color={C.navy} style={{flex:1}}>No, going forward only</Btn>
-        </div>
-        <button onClick={()=>setSwapPrompt(null)} style={{marginTop:12,background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Cancel</button>
-      </div>
-    </div>}
-    <div style={{fontSize:11,color:C.darkBlue,fontWeight:"700",textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontFamily:"Raleway,sans-serif"}}>🌐 Default Media (all learners)</div>
-    <div style={{display:"flex",flexWrap:"wrap",gap:16}}>
-      <div>
-        <div style={LS}>Default PDF</div>
-        <DriveLinkInput label="PDF" value={dm.pdf} hasLink={hasDfPdf} onChange={url=>requestSwap("pdf",url,dm.pdf_name)} onRemove={()=>applyDefault({pdf:null,pdf_name:null})}/>
-        {hasDfPdf&&<div style={{marginTop:4}}><input value={dm.pdf_name||""} onChange={e=>applyDefault({pdf_name:e.target.value})} placeholder="Label (optional)" style={{padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,width:"100%",boxSizing:"border-box"}}/></div>}
-      </div>
-      <div>
-        <div style={LS}>Default Audio</div>
-        {bankRecordings.length>0&&<div style={{marginBottom:6}}>
-          <select onChange={e=>{const r=bankRecordings.find(x=>x.id===e.target.value);if(r)requestSwap("audio",r.url,r.name);}} style={{padding:"5px 8px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",marginBottom:4}} defaultValue="">
-            <option value="">— Pick from Recording Bank —</option>
-            {bankRecordings.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </div>}
-        <DriveLinkInput label="Audio" value={dm.audio} hasLink={hasDfAudio} onChange={url=>requestSwap("audio",url,dm.audio_name)} onRemove={()=>applyDefault({audio:null,audio_name:null})}/>
-        {hasDfAudio&&<div style={{marginTop:4}}><input value={dm.audio_name||""} onChange={e=>applyDefault({audio_name:e.target.value})} placeholder="Label (optional)" style={{padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,width:"100%",boxSizing:"border-box"}}/></div>}
-      </div>
+  return <div style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 14px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:11,color:C.darkBlue,fontWeight:"700",textTransform:"uppercase",letterSpacing:1,fontFamily:"Raleway,sans-serif"}}>📋 Lesson Review</span>
+      {reviews.length>0&&<span style={{fontSize:11,background:C.lightBlue,color:C.blue,borderRadius:20,padding:"1px 8px",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>{reviews.length}×</span>}
+      {reviews.length>0&&<button onClick={()=>setShowHistory(h=>!h)} style={{fontSize:11,color:C.midGray,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{showHistory?"Hide History":"History"}</button>}
     </div>
+    <div style={{display:"flex",alignItems:"end",gap:8,flexWrap:"wrap"}}>
+      <div><div style={LS}>Last Reviewed</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{padding:"6px 10px",borderRadius:8,border:"1.5px solid #dee2e6",fontSize:13}}/></div>
+      <Btn onClick={log} small color={C.darkBlue} disabled={saving}>{saving?"Saving…":"Log"}</Btn>
+      {prayer.last_reviewed&&<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",paddingBottom:6}}>Current: <strong style={{color:C.navy}}>{prayer.last_reviewed}</strong></span>}
+    </div>
+    {showHistory&&<div style={{marginTop:10,fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:90,overflowY:"auto",background:"#f8f9fa",borderRadius:6,padding:"6px 8px"}}>{reviews.map((r,i)=><div key={r.id||i}><strong>{r.date}</strong>{r.note&&<span> — {r.note}</span>}</div>)}</div>}
+  </div>;
+}
+
+// ── Default Media Control Panel ────────────────────────────────────────────
+function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,bankRecordings,onSetDefaultMedia}) {
+  const [open,setOpen]=useState(false);
+  function dmKey(name,part){return `${name}|${part}`;}
+  const unique=[];const seen=new Set();
+  (prayers||[]).forEach(p=>{
+    const key=dmKey(p.name,p.part);
+    if(!seen.has(key)){seen.add(key);unique.push({name:p.name,part:p.part,page:p.page});}
+  });
+  unique.sort((a,b)=>(a.part-b.part)||a.name.localeCompare(b.name));
+  async function applyDefault(item,patch){
+    const dm=defaultMediaMap[dmKey(item.name,item.part)]||{};
+    const row={id:dm.id||genId(),prayer_name:item.name,part:item.part,...dm,...patch};
+    await DB.upsertDefaultMedia(row);
+    onSetDefaultMedia(item.name,item.part,row);
+  }
+  return <div style={{background:"white",borderRadius:14,marginBottom:20,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:16}}>🌐</span>
+        <span style={{fontWeight:"800",color:C.navy,fontSize:15}}>Default Media for All Learners</span>
+        <span style={{fontSize:12,background:C.lightBlue,color:C.blue,borderRadius:20,padding:"1px 8px",fontWeight:"700"}}>{unique.length}</span>
+      </div>
+      <span style={{color:C.midGray,fontSize:18}}>{open?"▲":"▼"}</span>
+    </button>
+    {open&&<div style={{padding:"0 20px 20px",borderTop:"1px solid #f0f2f5"}}>
+      <p style={{color:C.midGray,fontSize:12,margin:"12px 0",fontFamily:"Raleway,sans-serif"}}>Set the default PDF and audio for each prayer/reading. Learner-specific uploads still override these defaults.</p>
+      {unique.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif"}}>No prayers yet.</p>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {unique.map(item=>{
+          const dm=defaultMediaMap[dmKey(item.name,item.part)]||{};
+          return <div key={dmKey(item.name,item.part)} style={{background:"#fafbfc",borderRadius:10,padding:"12px 14px",border:"1px solid #e9ecef"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
+              <div><strong style={{fontFamily:"Raleway,sans-serif",color:C.navy,fontSize:14}}>{item.name}</strong>{item.page&&<span style={{color:C.midGray,fontSize:12,marginLeft:6}}>p.{item.page}</span>}<div style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{partLabels[item.part]||`Section ${item.part}`}</div></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(220px,1fr) minmax(220px,1fr)",gap:14}}>
+              <div><div style={LS}>Default PDF</div><PdfUploadControl label="Default PDF" value={dm.pdf} name={dm.pdf_name} onUploaded={(url,label)=>applyDefault(item,{pdf:url,pdf_name:label})} onRemove={()=>applyDefault(item,{pdf:null,pdf_name:null})}/></div>
+              <div><div style={LS}>Default Audio</div>
+                {bankRecordings.length>0&&<select onChange={e=>{const r=bankRecordings.find(x=>x.id===e.target.value);if(r)applyDefault(item,{audio:r.url,audio_name:r.name,recording_bank_id:r.id});}} style={{...IS,fontSize:12,marginBottom:6}} defaultValue="">
+                  <option value="">— Pick from Recording Bank —</option>
+                  {bankRecordings.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>}
+                <DriveLinkInput label="Audio" value={dm.audio} hasLink={!!dm.audio} onChange={url=>applyDefault(item,{audio:url,audio_name:dm.audio_name||"External audio",recording_bank_id:null})} onRemove={()=>applyDefault(item,{audio:null,audio_name:null,recording_bank_id:null})}/>
+                {!!dm.audio&&<div style={{marginTop:4}}><input value={dm.audio_name||""} onChange={e=>applyDefault(item,{audio_name:e.target.value})} placeholder="Label (optional)" style={{padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,width:"100%",boxSizing:"border-box"}}/></div>}
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>}
+    </div>}
   </div>;
 }
 
@@ -609,27 +656,10 @@ function RecordingBankPanel({bankRecordings,onBankChange}) {
   </div>;
 }
 
-// ── Last Reviewed Picker ───────────────────────────────────────────────────
-function LastReviewedPicker({prayer,role,onLinkUpdate}) {
-  const [showHistory,setShowHistory]=useState(false);
-  const reviews=prayer.instructor_reviews||[];
-  const lastDate=prayer.last_reviewed;
-  const history=reviews.map(r=>r.date).filter(Boolean);
-  if(role==="learner") return lastDate?<div style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",marginTop:4}}>Last reviewed: <strong style={{color:C.navy}}>{lastDate}</strong></div>:null;
-  return <div>
-    <div style={LS}>Last Reviewed</div>
-    <input type="date" value={lastDate||""} onChange={async e=>{const d=e.target.value;if(!d)return;const updated=[{id:genId(),date:d,note:""},...reviews];await onLinkUpdate(prayer.id,{last_reviewed:d,instructor_reviews:updated});}} style={{padding:"6px 10px",borderRadius:8,border:"1.5px solid #dee2e6",fontSize:13}}/>
-    {history.length>0&&<>
-      <button onClick={()=>setShowHistory(h=>!h)} style={{marginLeft:8,fontSize:11,color:C.midGray,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{showHistory?"Hide":"History"}</button>
-      {showHistory&&<div style={{marginTop:6,fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:80,overflowY:"auto",background:"#f8f9fa",borderRadius:6,padding:"4px 8px"}}>{history.map((d,i)=><div key={i}>{d}</div>)}</div>}
-    </>}
-  </div>;
-}
-
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onDelete,onNameSave,onUpdate,defaultMedia,bankRecordings,onSetDefaultMedia}) {
+function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onDelete,onNameSave,onUpdate,defaultMedia}) {
   const {isMobile}=useBreakpoint();
-  const [expanded,setExpanded]=useState(false);const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
+  const [expanded,setExpanded]=useState(false);const [learnerMediaOpen,setLearnerMediaOpen]=useState(false);const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
   const [confirmDelete,setConfirmDelete]=useState(false);
   const subtasks=prayer.subtasks||[];const subDone=subtasks.filter(s=>s.done).length;
   const reviews=prayer.instructor_reviews||[];
@@ -695,18 +725,19 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onDelete,onNameSave,
           </div>}
         </div>
       </div>
-      {expanded&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:16}}>
+      {expanded&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
+        <LessonReviewPanel prayer={prayer} onLinkUpdate={onLinkUpdate}/>
         <div>
-          <div style={{fontSize:11,color:C.midGray,fontWeight:"700",textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontFamily:"Raleway,sans-serif"}}>Learner-Specific Media</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:20}}>
-            <div><div style={LS}>PDF Override</div><DriveLinkInput label="PDF" value={prayer.pdf} hasLink={hasLearnerPdf} onChange={url=>onLinkUpdate(prayer.id,{pdf:url})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/>{hasLearnerPdf&&<div style={{marginTop:4}}><input value={prayer.pdf_name||""} onChange={e=>onLinkUpdate(prayer.id,{pdf_name:e.target.value})} placeholder="Label (optional)" style={{padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,width:"100%",boxSizing:"border-box"}}/></div>}</div>
+          <button onClick={()=>setLearnerMediaOpen(o=>!o)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"10px 12px",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
+            <span style={{fontSize:11,color:C.midGray,fontWeight:"700",textTransform:"uppercase",letterSpacing:1}}>Learner-Specific Media</span>
+            <span style={{color:C.midGray}}>{learnerMediaOpen?"▲":"▼"}</span>
+          </button>
+          {learnerMediaOpen&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 14px"}}>
+            <div><div style={LS}>PDF Override</div><PdfUploadControl label="Learner PDF" value={prayer.pdf} name={prayer.pdf_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/>{hasDefaultPdf&&!hasLearnerPdf&&<div style={{fontSize:11,color:C.midGray,marginTop:4,fontFamily:"Raleway,sans-serif"}}>Using default PDF unless you upload an override.</div>}</div>
             <div><div style={LS}>Audio Override</div><DriveLinkInput label="Audio" value={prayer.audio} hasLink={hasLearnerAudio} onChange={url=>onLinkUpdate(prayer.id,{audio:url})} onRemove={()=>onLinkUpdate(prayer.id,{audio:null,audio_name:null})}/>{hasLearnerAudio&&<div style={{marginTop:4}}><input value={prayer.audio_name||""} onChange={e=>onLinkUpdate(prayer.id,{audio_name:e.target.value})} placeholder="Label (optional)" style={{padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,width:"100%",boxSizing:"border-box"}}/></div>}</div>
             <div><div style={LS}>Target Date</div><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"6px 10px",borderRadius:8,border:"1.5px solid #dee2e6",fontSize:13}}/></div>
-            <LastReviewedPicker prayer={prayer} role={role} onLinkUpdate={onLinkUpdate}/>
-          </div>
+          </div>}
         </div>
-        <DefaultMediaPanel prayer={prayer} defaultMedia={defaultMedia} bankRecordings={bankRecordings} onSetDefaultMedia={onSetDefaultMedia}/>
-        <InstructorReviewPanel prayer={prayer} onUpdate={onUpdate}/>
       </div>}
     </div>
   </>;
@@ -825,7 +856,7 @@ function PrayerTracker({learnerId,role,onDing}) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
         {role==="instructor"&&<div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
           <Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Item</Btn>
-          <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Click name to rename · <strong>▼ Files</strong> for links, defaults & reviews</span>
+          <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Click name to rename · <strong>▼ Files</strong> for lesson review & learner-specific media</span>
         </div>}
         {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{color:C.blue,fontWeight:"800",fontSize:16,fontFamily:"Raleway,sans-serif"}}>{completed}/{prayerList.length} learned</span>
@@ -838,8 +869,12 @@ function PrayerTracker({learnerId,role,onDing}) {
 
     </div>
 
-    {/* Recording Bank — instructor only */}
-    {role==="instructor"&&<RecordingBankPanel bankRecordings={bankRecordings} onBankChange={setBankRecordings}/>}
+    {/* Shared instructor media controls */}
+    {role==="instructor"&&<div style={{marginBottom:20}}>
+      <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:"0 0 12px"}}>Instructor Media Control Panel</h3>
+      <RecordingBankPanel bankRecordings={bankRecordings} onBankChange={setBankRecordings}/>
+      <DefaultMediaControlPanel prayers={prayerList} partLabels={partLabels} defaultMediaMap={defaultMediaMap} bankRecordings={bankRecordings} onSetDefaultMedia={handleSetDefaultMedia}/>
+    </div>}
 
     {/* Prayers & Readings heading */}
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:"0 0 16px"}}>Prayers & Readings</h3>
@@ -868,8 +903,6 @@ function PrayerTracker({learnerId,role,onDing}) {
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onDelete={handleDelete} onNameSave={handleNameSave} onUpdate={updatePrayer}
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
-          bankRecordings={bankRecordings}
-          onSetDefaultMedia={handleSetDefaultMedia}
         />)}
       </div>;
     })}
