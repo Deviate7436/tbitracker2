@@ -532,8 +532,8 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
     <span style={{fontSize:11,color:C.darkBlue,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Lesson Review</span>
     <span style={{fontSize:11,color:last?C.navy:C.midGray,fontWeight:last?"800":"600",fontFamily:"Raleway,sans-serif"}}>{prettyDate(last)}</span>
     <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1}}>{saving?"Logging…":"Log"}</button>
-    {reviews.length>0&&<button onClick={()=>setShowHistory(h=>!h)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:0}}>Review History</button>}
-    {showHistory&&<div style={{flexBasis:"100%",fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:72,overflowY:"auto",background:"white",borderRadius:6,padding:"4px 6px",marginTop:2}}>{reviews.map((r,i)=><div key={r.id||i}><strong>{prettyDate(r.date)}</strong>{r.note&&<span> — {r.note}</span>}</div>)}</div>}
+    <button onClick={()=>setShowHistory(h=>!h)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:0}}>Review History</button>
+    {showHistory&&<div style={{flexBasis:"100%",fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:72,overflowY:"auto",background:"white",borderRadius:6,padding:"4px 6px",marginTop:2}}>{reviews.length?reviews.map((r,i)=><div key={r.id||i}><strong>{prettyDate(r.date)}</strong>{r.note&&<span> — {r.note}</span>}</div>):<div style={{fontStyle:"italic"}}>No review history yet.</div>}</div>}
   </div>;
 }
 
@@ -623,6 +623,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
   const [notesDraft,setNotesDraft]=useState(prayer.notes||"");
   const notesTimer=useRef(null);
+  const lastSavedNotes=useRef(prayer.notes||"");
   const hidden=!!prayer.hidden_from_learner;
 
   const effectivePdf=prayer.pdf||(defaultMedia?.pdf)||null;
@@ -633,13 +634,21 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   const hasLearnerPdf=!!prayer.pdf;const hasLearnerAudio=!!prayer.audio;
   const hasDefaultPdf=!hasLearnerPdf&&!!defaultMedia?.pdf;const hasDefaultAudio=!hasLearnerAudio&&!!defaultMedia?.audio;
 
-  useEffect(()=>{setNotesDraft(prayer.notes||"");},[prayer.id,prayer.notes]);
+  useEffect(()=>{setNotesDraft(prayer.notes||"");lastSavedNotes.current=prayer.notes||"";},[prayer.id,prayer.notes]);
+  const flushNotes=useCallback(async (value=notesDraft)=>{
+    const next=value||"";
+    if(notesTimer.current){clearTimeout(notesTimer.current);notesTimer.current=null;}
+    if(next===lastSavedNotes.current)return;
+    lastSavedNotes.current=next;
+    try{await onLinkUpdate(prayer.id,{notes:next});}
+    catch(e){console.error(e);alert("Could not save notes. Make sure the notes column has been added in Supabase.");}
+  },[notesDraft,onLinkUpdate,prayer.id]);
   function updateNotes(value){
     setNotesDraft(value);
     if(notesTimer.current)clearTimeout(notesTimer.current);
-    notesTimer.current=setTimeout(()=>onLinkUpdate(prayer.id,{notes:value}),600);
+    notesTimer.current=setTimeout(()=>flushNotes(value),500);
   }
-  useEffect(()=>()=>{if(notesTimer.current)clearTimeout(notesTimer.current);},[]);
+  useEffect(()=>()=>{if(notesTimer.current){clearTimeout(notesTimer.current);flushNotes(notesDraft);}},[flushNotes,notesDraft]);
 
   if(hidden&&role==="instructor") return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
@@ -693,7 +702,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
         </div>
       </div>}
       {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#fbf8ff"}}>
-        <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
+        <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} onBlur={()=>flushNotes(notesDraft)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
       </div>}
     </div>
   </>;
@@ -1800,7 +1809,6 @@ export default function App() {
               {l.date_of_service&&<span style={{color:C.midGray,fontSize:12,marginLeft:8,fontFamily:"Raleway,sans-serif"}}>{formatServiceDate(l.date_of_service)}</span>}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <Btn small color={C.blue} onClick={()=>{setSelectedLearner(l.id);setShowArchived(false);}}>View</Btn>
               <Btn small outline color={C.navy} onClick={()=>handleRestore(l)}>Restore</Btn>
               <Btn small danger onClick={()=>setDeleteConfirm(l)}>Delete</Btn>
             </div>
