@@ -622,6 +622,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   const [notesOpen,setNotesOpen]=useState(false);
   const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
   const [notesDraft,setNotesDraft]=useState(prayer.notes||"");
+  const notesDraftRef=useRef(prayer.notes||"");
   const notesTimer=useRef(null);
   const lastSavedNotes=useRef(prayer.notes||"");
   const hidden=!!prayer.hidden_from_learner;
@@ -634,21 +635,28 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   const hasLearnerPdf=!!prayer.pdf;const hasLearnerAudio=!!prayer.audio;
   const hasDefaultPdf=!hasLearnerPdf&&!!defaultMedia?.pdf;const hasDefaultAudio=!hasLearnerAudio&&!!defaultMedia?.audio;
 
-  useEffect(()=>{setNotesDraft(prayer.notes||"");lastSavedNotes.current=prayer.notes||"";},[prayer.id,prayer.notes]);
-  const flushNotes=useCallback(async (value=notesDraft)=>{
+  useEffect(()=>{
+    const incoming=prayer.notes||"";
+    setNotesDraft(incoming);
+    notesDraftRef.current=incoming;
+    lastSavedNotes.current=incoming;
+    if(notesTimer.current){clearTimeout(notesTimer.current);notesTimer.current=null;}
+  },[prayer.id]);
+  const flushNotes=useCallback(async (value)=>{
     const next=value||"";
     if(notesTimer.current){clearTimeout(notesTimer.current);notesTimer.current=null;}
     if(next===lastSavedNotes.current)return;
     lastSavedNotes.current=next;
     try{await onLinkUpdate(prayer.id,{notes:next});}
     catch(e){console.error(e);alert("Could not save notes. Make sure the notes column has been added in Supabase.");}
-  },[notesDraft,onLinkUpdate,prayer.id]);
+  },[onLinkUpdate,prayer.id]);
   function updateNotes(value){
+    notesDraftRef.current=value;
     setNotesDraft(value);
     if(notesTimer.current)clearTimeout(notesTimer.current);
-    notesTimer.current=setTimeout(()=>flushNotes(value),500);
+    notesTimer.current=setTimeout(()=>flushNotes(value),800);
   }
-  useEffect(()=>()=>{if(notesTimer.current){clearTimeout(notesTimer.current);flushNotes(notesDraft);}},[flushNotes,notesDraft]);
+  useEffect(()=>()=>{if(notesTimer.current)clearTimeout(notesTimer.current);},[prayer.id]);
 
   if(hidden&&role==="instructor") return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
@@ -702,7 +710,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
         </div>
       </div>}
       {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#fbf8ff"}}>
-        <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} onBlur={()=>flushNotes(notesDraft)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
+        <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} onBlur={()=>flushNotes(notesDraftRef.current)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
       </div>}
     </div>
   </>;
