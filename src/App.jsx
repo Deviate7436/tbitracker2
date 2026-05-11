@@ -483,7 +483,7 @@ function PdfUploadControl({label,value,name,onUploaded,onRemove}) {
       {value&&<button onClick={onRemove} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>}
     </div>
     <input type="file" accept="application/pdf,.pdf" onChange={e=>handleFile(e.target.files?.[0])} disabled={uploading} style={{...IS,fontSize:12,padding:"8px 10px",background:"white"}}/>
-    <p style={{fontSize:11,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading PDF…":"Upload a PDF to store it directly in the tracker."}</p>
+    <p style={{fontSize:11,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading PDF…":""}</p>
   </div>;
 }
 
@@ -506,7 +506,7 @@ function AudioUploadControl({label="Audio",value,name,onUploaded,onRemove}) {
       {value&&<button onClick={onRemove} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>}
     </div>
     <input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.opus" onChange={e=>handleFile(e.target.files?.[0])} disabled={uploading} style={{...IS,fontSize:12,padding:"8px 10px",background:"white"}}/>
-    <p style={{fontSize:11,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading audio…":"Upload MP3 or M4A for best browser playback."}</p>
+    <p style={{fontSize:11,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>{uploading?"Uploading audio…":""}</p>
   </div>;
 }
 
@@ -558,14 +558,17 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
       </div>
       <span style={{color:C.midGray,fontSize:18}}>{open?"▲":"▼"}</span>
     </button>
-    {open&&<div style={{padding:"0 20px 20px",borderTop:"1px solid #f0f2f5"}}>
-      <p style={{color:C.midGray,fontSize:12,margin:"12px 0",fontFamily:"Raleway,sans-serif"}}>Set default PDFs and audio files for each prayer/reading. Learner-specific uploads still override these defaults.</p>
-      {unique.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif"}}>No prayers yet.</p>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {unique.map(item=>{
+    {open&&<div style={{padding:"14px 20px 20px",borderTop:"1px solid #f0f2f5"}}>
+      {unique.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif"}}>No prayers yet.</p>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+        {unique.map((item,idx)=>{
           const dm=defaultMediaMap[dmKey(item.name,item.part)]||{};
-          return <div key={dmKey(item.name,item.part)} style={{background:"#fafbfc",borderRadius:10,padding:"12px 14px",border:"1px solid #e9ecef"}}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
-              <div><strong style={{fontFamily:"Raleway,sans-serif",color:C.navy,fontSize:14}}>{item.name}</strong>{item.page&&<span style={{color:C.midGray,fontSize:12,marginLeft:6}}>p.{item.page}</span>}<div style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{partLabels[item.part]||`Section ${item.part}`}</div></div>
+          const accents=[C.lightBlue,"#fff6e8","#f0faf0","#f7f0ff","#fff2f2"];
+          const borders=[C.blue,"#f2a541",C.green,C.purple,C.red];
+          const bg=accents[idx%accents.length];
+          const border=borders[idx%borders.length];
+          return <div key={dmKey(item.name,item.part)} style={{background:bg,borderRadius:12,padding:"14px 16px",border:`1px solid ${border}55`,borderLeft:`6px solid ${border}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:12,alignItems:"flex-start"}}>
+              <div><strong style={{fontFamily:"Raleway,sans-serif",color:C.navy,fontSize:15}}>{item.name}</strong>{item.page&&<span style={{color:C.midGray,fontSize:12,marginLeft:6}}>p.{item.page}</span>}<div style={{display:"inline-block",fontSize:10,color:"white",background:border,borderRadius:20,padding:"2px 8px",marginLeft:8,fontFamily:"Raleway,sans-serif",fontWeight:"800"}}>{partLabels[item.part]||`Section ${item.part}`}</div></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
               <div><div style={LS}>Default PDF</div><PdfUploadControl label="Default PDF" value={dm.pdf} name={dm.pdf_name} onUploaded={(url,label)=>applyDefault(item,{pdf:url,pdf_name:label})} onRemove={()=>applyDefault(item,{pdf:null,pdf_name:null})}/></div>
@@ -598,24 +601,20 @@ function SettingsModal({learnerId,onClose,onMediaChange}) {
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.72)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:5000,padding:16}}>
     <div style={{background:C.cream,borderRadius:20,width:"100%",maxWidth:880,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.4)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"18px 22px",background:"white",borderBottom:"1px solid #e9ecef",position:"sticky",top:0,zIndex:1}}>
-        <div><h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:22,margin:"0 0 2px"}}>Settings</h2><p style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray,margin:0}}>Media controls live here instead of inside individual tracker cards.</p></div>
+        <div><h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:22,margin:"0"}}>Settings</h2></div>
         <button onClick={onClose} style={{background:"none",border:"none",color:C.midGray,fontSize:26,cursor:"pointer"}}>✕</button>
       </div>
       <div style={{padding:22}}>
         {!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>} 
-        <div style={{marginTop:16,background:"white",borderRadius:12,padding:"14px 16px",border:"1px solid #e9ecef"}}>
-          <div style={{fontSize:12,color:C.midGray,fontWeight:"800",textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"Raleway,sans-serif"}}>More settings</div>
-          <p style={{fontSize:13,color:C.midGray,margin:0,fontFamily:"Raleway,sans-serif"}}>Additional controls can be added here as needed.</p>
-        </div>
       </div>
     </div>
   </div>;
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,dragEnabled=false,onDragStart,onDragOver,onDrop,isDragging=false}) {
+function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia}) {
   const {isMobile}=useBreakpoint();
-  const [expanded,setExpanded]=useState(false);const [learnerMediaOpen,setLearnerMediaOpen]=useState(false);const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
+  const [expanded,setExpanded]=useState(false);const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
   const subtasks=prayer.subtasks||[];const subDone=subtasks.filter(s=>s.done).length;
   const reviews=prayer.instructor_reviews||[];
   const hidden=!!prayer.hidden_from_learner;
@@ -637,16 +636,16 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div draggable={dragEnabled} onDragStart={dragEnabled?onDragStart:undefined} onDragOver={dragEnabled?onDragOver:undefined} onDrop={dragEnabled?onDrop:undefined} style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${hidden?C.midGray:(STATUS_COLORS[prayer.status]||"#adb5bd")}`,boxShadow:isDragging?"0 8px 28px rgba(27,154,214,0.22)":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,opacity:isDragging?0.55:hidden?0.72:1,outline:isDragging?`2px dashed ${C.blue}`:"none"}}>
+    <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${hidden?C.midGray:(STATUS_COLORS[prayer.status]||"#adb5bd")}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,opacity:hidden?0.72:1}}>
       <div style={{padding:isMobile?"12px 14px":"14px 18px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-            {dragEnabled&&<span title="Drag to reorder" style={{fontSize:16,color:C.midGray,cursor:"grab",userSelect:"none",padding:"0 2px"}}>☰</span>}
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
             <StatusBadge status={prayer.status}/>
             {hidden&&role==="instructor"&&<span style={{fontSize:11,color:C.midGray,border:"1px solid #dee2e6",borderRadius:10,padding:"1px 8px",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Hidden from learner</span>}
             {subtasks.length>0&&<span style={{fontSize:11,color:C.purple,border:`1px solid ${C.purple}44`,borderRadius:10,padding:"1px 8px",fontFamily:"Raleway,sans-serif"}}>{subDone}/{subtasks.length} subtasks</span>}
+            {role==="instructor"?<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>:prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎯 Target: {prayer.target_date}</span>:null}
             {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -657,7 +656,6 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio{hasDefaultAudio&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>
               :null}
             {prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
-            {prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎯 Target: {prayer.target_date}</span>}
           </div>
           {(role==="instructor"||subtasks.length>0)&&<div style={{marginTop:10}}>
             {subtasks.length>0&&<div style={{marginBottom:6}}>
@@ -676,23 +674,16 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
           {role==="instructor"&&<select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:isMobile?"5px 6px":"7px 10px",borderRadius:8,border:`1.5px solid ${STATUS_COLORS[prayer.status]||"#adb5bd"}`,background:"white",fontSize:isMobile?11:13,color:C.navy,cursor:"pointer",fontFamily:"Raleway,sans-serif",maxWidth:isMobile?100:160}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>}
-          {role==="instructor"&&<div style={{display:"flex",gap:6}}>
-            <button onClick={()=>setExpanded(e=>!e)} style={{fontSize:11,color:C.midGray,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{expanded?"▲ Collapse":"▼ Media"}</button>
-            <button onClick={()=>onHideToggle(prayer.id,!hidden)} style={{fontSize:11,color:hidden?C.blue:C.red,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{hidden?"Unhide":"Hide"}</button>
+          {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button onClick={()=>setExpanded(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{expanded?"▲ Collapse":"▼ Media"}</button>
+            <button onClick={()=>onHideToggle(prayer.id,!hidden)} style={{fontSize:11,color:hidden?C.blue:C.red,background:hidden?C.lightBlue:"#fff2f2",border:`1px solid ${hidden?C.blue:C.red}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{hidden?"Unhide":"Hide"}</button>
           </div>}
         </div>
       </div>
       {expanded&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
-        <div>
-          <button onClick={()=>setLearnerMediaOpen(o=>!o)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"10px 12px",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
-            <span style={{fontSize:11,color:C.midGray,fontWeight:"700",textTransform:"uppercase",letterSpacing:1}}>Learner-Specific Media</span>
-            <span style={{color:C.midGray}}>{learnerMediaOpen?"▲":"▼"}</span>
-          </button>
-          {learnerMediaOpen&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 14px"}}>
-            <div><div style={LS}>PDF Override</div><PdfUploadControl label="Learner PDF" value={prayer.pdf} name={prayer.pdf_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/>{hasDefaultPdf&&!hasLearnerPdf&&<div style={{fontSize:11,color:C.midGray,marginTop:4,fontFamily:"Raleway,sans-serif"}}>Using default PDF unless you upload an override.</div>}</div>
-            <div><div style={LS}>Audio Override</div><AudioUploadControl label="Learner Audio" value={prayer.audio} name={prayer.audio_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{audio:url,audio_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{audio:null,audio_name:null})}/>{hasDefaultAudio&&!hasLearnerAudio&&<div style={{fontSize:11,color:C.midGray,marginTop:4,fontFamily:"Raleway,sans-serif"}}>Using default audio unless you upload an override.</div>}</div>
-            <div><div style={LS}>Target Date</div><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"6px 10px",borderRadius:8,border:"1.5px solid #dee2e6",fontSize:13}}/></div>
-          </div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
+          <div><div style={LS}>PDF Override</div><PdfUploadControl label="Learner PDF" value={prayer.pdf} name={prayer.pdf_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/></div>
+          <div><div style={LS}>Audio Override</div><AudioUploadControl label="Learner Audio" value={prayer.audio} name={prayer.audio_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{audio:url,audio_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{audio:null,audio_name:null})}/></div>
         </div>
       </div>}
     </div>
@@ -707,9 +698,6 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
   const [collapsedParts,setCollapsedParts]=useState({});
   const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"false");}catch{return false;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
-  const [orderMode,setOrderMode]=useState(()=>{try{return localStorage.getItem(`orderMode_${learnerId}`)||"default";}catch{return "default";}});
-  const [customOrder,setCustomOrder]=useState(()=>{try{return JSON.parse(localStorage.getItem(`customOrder_${learnerId}`)||"[]");}catch{return [];}});
-  const [draggingPrayerId,setDraggingPrayerId]=useState(null);
 
   function dmKey(name,part){return `${name}|${part}`;}
   function defaultSort(a,b){return ((a.sort_order??0)-(b.sort_order??0))||((a.page||9999)-(b.page||9999))||a.name.localeCompare(b.name);}
@@ -740,8 +728,6 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
   }
   useEffect(()=>{load();},[learnerId,mediaRefreshKey]);
   useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
-  useEffect(()=>{try{localStorage.setItem(`orderMode_${learnerId}`,orderMode);}catch{}},[orderMode,learnerId]);
-  useEffect(()=>{try{localStorage.setItem(`customOrder_${learnerId}`,JSON.stringify(customOrder));}catch{}},[customOrder,learnerId]);
 
   function handleSetDefaultMedia(prayerName,part,row){
     setDefaultMediaMap(prev=>({...prev,[dmKey(prayerName,part)]:row}));
@@ -756,59 +742,11 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
   const parts=[...new Set(visiblePrayerList.map(p=>p.part))].sort();
 
   function toggleCollapse(part){setCollapsedParts(prev=>({...prev,[part]:!prev[part]}));}
-  function customRank(id){const i=customOrder.indexOf(id);return i===-1?999999:i;}
-
   function getSortedPrayers(part) {
     let pp=prayerList.filter(p=>p.part===part);
     if(role==="learner") pp=pp.filter(p=>!p.hidden_from_learner);
     if(hideNotStarted&&role==="learner") pp=pp.filter(p=>p.status!=="Not Started");
-    if(role==="learner"&&orderMode==="custom") return pp.slice().sort((a,b)=>(customRank(a.id)-customRank(b.id))||defaultSort(a,b));
     return pp.slice().sort(defaultSort);
-  }
-
-  function getCustomPagePrayers() {
-    let pp=prayerList.slice();
-    if(role==="learner") pp=pp.filter(p=>!p.hidden_from_learner);
-    if(hideNotStarted&&role==="learner") pp=pp.filter(p=>p.status!=="Not Started");
-    if(role==="learner"&&orderMode==="custom") return pp.slice().sort((a,b)=>(customRank(a.id)-customRank(b.id))||defaultSort(a,b));
-    return pp.slice().sort(defaultSort);
-  }
-
-  function enableCustomOrder(){
-    const hasStoredOrder=visiblePrayerList.some(p=>p.learner_sort_order!==null&&p.learner_sort_order!==undefined);
-    const defaultIds=visiblePrayerList.slice().sort(hasStoredOrder?storedCustomSort:defaultSort).map(p=>p.id);
-    setCustomOrder(prev=>prev.length?prev.filter(id=>defaultIds.includes(id)).concat(defaultIds.filter(id=>!prev.includes(id))):defaultIds);
-    setOrderMode("custom");
-  }
-  function useDefaultOrder(){setOrderMode("default");}
-  async function saveCustomOrder(nextOrder){
-    setCustomOrder(nextOrder);
-    setPrayers(prev=>{const rank=new Map(nextOrder.map((id,i)=>[id,i]));const np=prev.map(p=>rank.has(p.id)?{...p,learner_sort_order:rank.get(p.id)}:p);np._att=prev._att;return np;});
-    setDraggingPrayerId(null);
-    try{await Promise.all(nextOrder.map((id,i)=>DB.updatePrayer(id,{learner_sort_order:i})));}catch(e){console.error(e);alert("Could not save custom order. Make sure the learner_sort_order column has been added in Supabase.");}
-  }
-
-  async function handleDropPrayer(targetId,part){
-    if(!draggingPrayerId||draggingPrayerId===targetId){setDraggingPrayerId(null);return;}
-    const sectionIds=getSortedPrayers(part).map(p=>p.id);
-    if(!sectionIds.includes(draggingPrayerId)){setDraggingPrayerId(null);return;}
-    const without=sectionIds.filter(id=>id!==draggingPrayerId);
-    const idx=Math.max(0,without.indexOf(targetId));
-    const reordered=[...without.slice(0,idx),draggingPrayerId,...without.slice(idx)];
-    const known=visiblePrayerList.map(p=>p.id);
-    const rest=customOrder.filter(id=>known.includes(id)&&!sectionIds.includes(id));
-    const missing=known.filter(id=>!rest.includes(id)&&!sectionIds.includes(id));
-    await saveCustomOrder([...rest,...missing,...reordered]);
-  }
-
-  async function handleDropPrayerGlobal(targetId){
-    if(!draggingPrayerId||draggingPrayerId===targetId){setDraggingPrayerId(null);return;}
-    const pageIds=getCustomPagePrayers().map(p=>p.id);
-    if(!pageIds.includes(draggingPrayerId)){setDraggingPrayerId(null);return;}
-    const without=pageIds.filter(id=>id!==draggingPrayerId);
-    const idx=Math.max(0,without.indexOf(targetId));
-    const reordered=[...without.slice(0,idx),draggingPrayerId,...without.slice(idx)];
-    await saveCustomOrder(reordered);
   }
 
   async function handleStatusChange(id,status) {
@@ -868,53 +806,24 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
 
   return <div>
     {/* Instructor / learner controls */}
-    <div style={{background:"white",borderRadius:16,padding:"16px 20px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
-        {role==="instructor"&&<div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
-          <Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>
-          <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Click name or page number to edit · <strong>▼ Media</strong> for learner-specific files</span>
-        </div>}
-        {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-          <span style={{color:C.blue,fontWeight:"800",fontSize:16,fontFamily:"Raleway,sans-serif"}}>{completed}/{visiblePrayerList.length} learned</span>
-          <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",userSelect:"none"}}>
-            <input type="checkbox" checked={hideNotStarted} onChange={e=>setHideNotStarted(e.target.checked)} style={{accentColor:C.navy,width:15,height:15}}/>
-            <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner</span>
-          </label>
-        </div>}
-        {role==="learner"&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",width:"100%"}}>
-          <div><span style={{color:C.blue,fontWeight:"800",fontSize:16,fontFamily:"Raleway,sans-serif"}}>{completed}/{visiblePrayerList.length} learned</span><span style={{color:C.midGray,fontSize:12,marginLeft:10,fontFamily:"Raleway,sans-serif"}}>Order: {orderMode==="custom"?"Custom":"Default"}</span></div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            <button onClick={useDefaultOrder} style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${orderMode==="default"?C.blue:"#dee2e6"}`,background:orderMode==="default"?C.lightBlue:"white",color:orderMode==="default"?C.blue:C.midGray,fontSize:12,fontWeight:"700",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>Default order</button>
-            <button onClick={enableCustomOrder} style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${orderMode==="custom"?C.blue:"#dee2e6"}`,background:orderMode==="custom"?C.lightBlue:"white",color:orderMode==="custom"?C.blue:C.midGray,fontSize:12,fontWeight:"700",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>Custom order</button>
-          </div>
-          {orderMode==="custom"&&<div style={{flexBasis:"100%",fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Drag cards by the ☰ handle to reorder your custom page. Switch back to Default order anytime.</div>}
-        </div>}
+    <div style={{display:"grid",gridTemplateColumns:role==="instructor"?"minmax(220px,1fr) auto":"1fr",gap:12,alignItems:"center",marginBottom:20}}>
+      <div style={{background:"white",borderRadius:16,padding:"14px 18px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <span style={{color:C.blue,fontWeight:"800",fontSize:16,fontFamily:"Raleway,sans-serif"}}>{completed}/{visiblePrayerList.length} learned</span>
+        {role==="instructor"&&<label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",userSelect:"none"}}>
+          <input type="checkbox" checked={hideNotStarted} onChange={e=>setHideNotStarted(e.target.checked)} style={{accentColor:C.navy,width:15,height:15}}/>
+          <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner</span>
+        </label>}
       </div>
+      {role==="instructor"&&<div style={{background:C.lightBlue,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"12px 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
+        <Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>
+      </div>}
     </div>
 
     {/* Prayers & Readings heading */}
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:"0 0 16px"}}>Prayers & Readings</h3>
 
     {/* Sections */}
-    {role==="learner"&&orderMode==="custom"
-      ?<div style={{marginBottom:28}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}>Custom learner order</span>
-          <span style={{fontSize:13,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{completed}/{visiblePrayerList.length}</span>
-        </div>
-        {getCustomPagePrayers().map(p=><PrayerRow
-          key={p.id} prayer={p} role={role}
-          onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
-          onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
-          defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
-          dragEnabled
-          isDragging={draggingPrayerId===p.id}
-          onDragStart={()=>setDraggingPrayerId(p.id)}
-          onDragOver={e=>{e.preventDefault();}}
-          onDrop={e=>{e.preventDefault();handleDropPrayerGlobal(p.id);}}
-        />)}
-      </div>
-      :parts.map(part=>{
+    {parts.map(part=>{
       const pp=getSortedPrayers(part);if(!pp.length)return null;
       const allPP=visiblePrayerList.filter(p=>p.part===part);
       const done=allPP.filter(p=>p.status==="Learned").length;
@@ -936,11 +845,6 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
-          dragEnabled={false}
-          isDragging={draggingPrayerId===p.id}
-          onDragStart={()=>setDraggingPrayerId(p.id)}
-          onDragOver={e=>{e.preventDefault();}}
-          onDrop={e=>{e.preventDefault();handleDropPrayer(p.id,part);}}
         />)}
       </div>;
     })}
@@ -1359,7 +1263,7 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
       <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
       <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
     </div>
-    <div style={{fontSize:11,color:saving?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",minHeight:16}}>{saving?"Saving…":"Changes save automatically."}</div>
+    <div style={{fontSize:11,color:saving?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",minHeight:16}}>{saving?"Saving…":""}</div>
   </div>;
 }
 
@@ -1655,7 +1559,7 @@ function AddLearnerModal({onAdd,onClose}) {
 
       {/* Access key */}
       <div style={{marginBottom:6}}><label style={LS}>Access Key</label><input value={form.accessKey} onChange={e=>setField("accessKey",e.target.value.toUpperCase())} style={IS} placeholder="SARAH2026"/></div>
-      <p style={{fontSize:11,color:C.midGray,margin:"0 0 16px",fontFamily:"Raleway,sans-serif"}}>This is what the learner types to log in. Keep it simple.</p>
+      <p style={{fontSize:11,color:C.midGray,margin:"0 0 16px",fontFamily:"Raleway,sans-serif"}}></p>
 
       {error&&<p style={{color:C.red,fontSize:13,margin:"0 0 12px",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
       <div style={{display:"flex",gap:12}}><Btn onClick={handle} color={C.blue} style={{flex:1}} disabled={saving}>{saving?"Saving…":"Add Learner"}</Btn><Btn onClick={onClose} outline color={C.navy} style={{flex:1}}>Cancel</Btn></div>
