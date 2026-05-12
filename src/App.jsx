@@ -699,7 +699,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,fontSize:11,color:C.red,background:"#fff2f2",border:`1px solid ${C.red}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif",zIndex:2}}>Hide</button>}
-      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingLeft:role==="instructor"?(isMobile?70:76):undefined,display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
@@ -711,10 +711,10 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
             {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            {role==="instructor"&&<button onClick={()=>setMediaOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{mediaOpen?"▲ Edit Media":"▼ Edit Media"}</button>}
             {hasPdf
               ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
+            {role==="instructor"&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
             {hasAudio&&!hasPdf
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
