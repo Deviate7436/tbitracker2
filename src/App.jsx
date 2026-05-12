@@ -539,7 +539,7 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
 
 // ── Default Media Control Panel ────────────────────────────────────────────
 function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefaultMedia}) {
-  const [open,setOpen]=useState(true);
+  const [open,setOpen]=useState(false);
   function dmKey(name,part){return `${name}|${part}`;}
   const unique=[];const seen=new Set();
   (prayers||[]).forEach(p=>{
@@ -585,7 +585,7 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
   </div>;
 }
 
-function SettingsModal({learnerId,onClose,onMediaChange}) {
+function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArchived,setShowArchived,loadArchivedLearners,formatServiceDate,handleRestore,setDeleteConfirm}) {
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});const [defaultMediaMap,setDefaultMediaMap]=useState({});
   function dmKey(name,part){return `${name}|${part}`;}
@@ -600,7 +600,7 @@ function SettingsModal({learnerId,onClose,onMediaChange}) {
     }catch(e){console.error(e);setError("Could not load settings.");}
     setLoading(false);
   }
-  useEffect(()=>{load();},[learnerId]);
+  useEffect(()=>{load();setShowArchived?.(false);},[learnerId]);
   function handleSetDefaultMedia(prayerName,part,row){setDefaultMediaMap(prev=>({...prev,[dmKey(prayerName,part)]:row}));onMediaChange?.();}
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.72)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:5000,padding:16}}>
     <div style={{background:C.cream,borderRadius:20,width:"100%",maxWidth:880,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.4)"}}>
@@ -608,8 +608,32 @@ function SettingsModal({learnerId,onClose,onMediaChange}) {
         <div><h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:22,margin:"0"}}>Settings</h2></div>
         <button onClick={onClose} style={{background:"none",border:"none",color:C.midGray,fontSize:26,cursor:"pointer"}}>✕</button>
       </div>
-      <div style={{padding:22}}>
+      <div style={{padding:22,display:"flex",flexDirection:"column",gap:14}}>
         {!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>} 
+        <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
+          <button onClick={async()=>{if(!showArchived){await loadArchivedLearners?.();}setShowArchived?.(!showArchived);}}
+            style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:16}}>📦</span>
+              <span style={{fontWeight:"800",color:C.navy,fontSize:15}}>Archived Trackers</span>
+              <span style={{fontSize:12,background:"#f0f2f5",color:C.midGray,borderRadius:20,padding:"1px 8px",fontWeight:"700"}}>{(archivedLearners||[]).length}</span>
+            </div>
+            <span style={{color:C.midGray,fontSize:18}}>{showArchived?"▲":"▼"}</span>
+          </button>
+          {showArchived&&<div style={{padding:"14px 20px 20px",borderTop:"1px solid #f0f2f5"}}>
+            {(archivedLearners||[]).length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif",margin:0}}>No archived learners.</p>:
+            archivedLearners.map(l=><div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"9px 0",borderBottom:"1px solid #f0f2f5"}}>
+              <div>
+                <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name}</span>
+                {l.date_of_service&&<span style={{color:C.midGray,fontSize:12,marginLeft:8,fontFamily:"Raleway,sans-serif"}}>{formatServiceDate?.(l.date_of_service)}</span>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small outline color={C.navy} onClick={()=>handleRestore?.(l)}>Restore</Btn>
+                <Btn small danger onClick={()=>setDeleteConfirm?.(l)}>Delete</Btn>
+              </div>
+            </div>)}
+          </div>}
+        </div>
       </div>
     </div>
   </div>;
@@ -632,8 +656,6 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   const effectiveAudio=prayer.audio||(defaultMedia?.audio)||null;
   const effectiveAudioName=prayer.audio_name||(defaultMedia?.audio_name)||null;
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
-  const hasLearnerPdf=!!prayer.pdf;const hasLearnerAudio=!!prayer.audio;
-  const hasDefaultPdf=!hasLearnerPdf&&!!defaultMedia?.pdf;const hasDefaultAudio=!hasLearnerAudio&&!!defaultMedia?.audio;
 
   useEffect(()=>{
     const incoming=prayer.notes||"";
@@ -671,35 +693,38 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     </div>
   </>;
 
+  const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${STATUS_COLORS[prayer.status]||"#adb5bd"}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8}}>
-      <div style={{padding:isMobile?"12px 14px":"14px 18px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+    <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
+      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,fontSize:11,color:C.red,background:"#fff2f2",border:`1px solid ${C.red}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif",zIndex:2}}>Hide</button>}
+      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingLeft:role==="instructor"?(isMobile?70:76):undefined,display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
-            <StatusBadge status={prayer.status}/>
-            {role==="instructor"?<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>:prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎯 Target: {prayer.target_date}</span>:null}
+            {role==="instructor"
+              ?<select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
+              :<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
+            {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>}
             {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            {role==="instructor"&&<button onClick={()=>setMediaOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{mediaOpen?"▲ Edit Media":"▼ Edit Media"}</button>}
             {hasPdf
-              ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page{hasDefaultPdf&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>
+              ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {hasAudio&&!hasPdf
-              ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio{hasDefaultAudio&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>
+              ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
-            {prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
+            {role!=="learner"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
-          {role==="instructor"&&<select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:isMobile?"5px 6px":"7px 10px",borderRadius:8,border:`1.5px solid ${STATUS_COLORS[prayer.status]||"#adb5bd"}`,background:"white",fontSize:isMobile?11:13,color:C.navy,cursor:"pointer",fontFamily:"Raleway,sans-serif",maxWidth:isMobile?100:160}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>}
+          {role==="learner"&&prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>:null}
           {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <button onClick={()=>setMediaOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{mediaOpen?"▲ Media":"▼ Media"}</button>
             <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Notes":"▼ Notes"}</button>
-            <button onClick={()=>onHideToggle(prayer.id,true)} style={{fontSize:11,color:C.red,background:"#fff2f2",border:`1px solid ${C.red}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>Hide</button>
           </div>}
         </div>
       </div>
@@ -1189,8 +1214,8 @@ function SmartReview({learnerId}) {
           {days!==null&&<span style={{fontSize:12,color:C.midGray,border:"1px solid #e9ecef",borderRadius:20,padding:"3px 10px",fontFamily:"Raleway,sans-serif"}}>{days===0?"Reviewed today":`${days}d ago`}</span>}
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:hasPdf&&hasAudio?0:8}}>
-          {hasPdf&&<button onClick={()=>setShowPdfModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page{current.has_default_pdf&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>}
-          {hasAudio&&!hasPdf&&<button onClick={()=>setShowAudioModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio{current.has_default_audio&&<span style={{fontSize:10,marginLeft:4,opacity:0.7}}>(default)</span>}</button>}
+          {hasPdf&&<button onClick={()=>setShowPdfModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
+          {hasAudio&&!hasPdf&&<button onClick={()=>setShowAudioModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>}
         </div>
         {hasAudio&&hasPdf&&<div style={{marginBottom:8}}><AudioPlayer url={effectiveAudio} name={effectiveAudioName}/></div>}
 
@@ -1246,8 +1271,9 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   const [email1Draft,setEmail1Draft]=useState(l.email1||"");
   const [email2Draft,setEmail2Draft]=useState(l.email2||"");
   const [email3Draft,setEmail3Draft]=useState(l.email3||"");
+  const [emailOpen,setEmailOpen]=useState(false);
   const [saving,setSaving]=useState(false);
-  useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");},[l.id]);
+  useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");setEmailOpen(false);},[l.id]);
 
   async function savePatch(fields){
     setSaving(true);
@@ -1270,24 +1296,31 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   }
 
   return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 1fr 1fr 1fr",gap:12,marginBottom:6}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
       <div><div style={LS}>Instructor</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
+          {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer",flexWrap:"wrap"}}>
             <input type="checkbox" checked={instrDraft.includes(name)} onChange={()=>toggleInstructor(name)} style={{accentColor:C.blue}}/>
             <span style={{fontWeight:"700"}}>{name}</span>
             <span style={{color:C.midGray,fontSize:11}}>{email}</span>
           </label>)}
         </div>
       </div>
-      <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-      <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-      <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+      <div style={{background:"#fafbfc",border:"1px solid #e9ecef",borderRadius:10,overflow:"hidden"}}>
+        <button onClick={()=>setEmailOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"9px 12px",background:"white",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13}}>
+          <span>Contact Emails</span>
+          <span style={{fontSize:12,color:C.midGray}}>{emailOpen?"▲":"▼"}</span>
+        </button>
+        {emailOpen&&<div style={{padding:12,display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr",gap:10,borderTop:"1px solid #f0f2f5"}}>
+          <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+          <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+          <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+        </div>}
+      </div>
     </div>
     <div style={{fontSize:11,color:saving?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",minHeight:16}}>{saving?"Saving…":""}</div>
   </div>;
 }
-
 
 function buildServicePatchFromDate(dateStr, learner) {
   if(!dateStr) return {date_of_service:null};
@@ -1802,28 +1835,6 @@ export default function App() {
         </>}
       </div>}
 
-      {/* Archived learners toggle */}
-      {role==="instructor"&&<div style={{marginBottom:16}}>
-        <button onClick={async()=>{if(!showArchived){await loadArchivedLearners();}setShowArchived(s=>!s);}}
-          style={{background:"none",border:"none",color:C.midGray,fontSize:12,cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>
-          {showArchived?"▲ Hide archived trackers":"▼ View archived trackers"}
-        </button>
-        {showArchived&&<div style={{marginTop:12,background:"white",borderRadius:12,padding:"16px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-          <div style={{fontSize:12,color:C.midGray,fontWeight:"700",textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontFamily:"Raleway,sans-serif"}}>Archived Learners</div>
-          {archivedLearners.length===0?<p style={{color:C.midGray,fontStyle:"italic",fontSize:13,fontFamily:"Raleway,sans-serif",margin:0}}>No archived learners.</p>:
-          archivedLearners.map(l=><div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f0f2f5"}}>
-            <div>
-              <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name}</span>
-              {l.date_of_service&&<span style={{color:C.midGray,fontSize:12,marginLeft:8,fontFamily:"Raleway,sans-serif"}}>{formatServiceDate(l.date_of_service)}</span>}
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <Btn small outline color={C.navy} onClick={()=>handleRestore(l)}>Restore</Btn>
-              <Btn small danger onClick={()=>setDeleteConfirm(l)}>Delete</Btn>
-            </div>
-          </div>)}
-        </div>}
-      </div>}
-
       {/* Instructor learner info card */}
       {selectedLearner&&role==="instructor"&&(()=>{const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);if(!l)return null;return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fit,minmax(140px,1fr))",gap:isMobile?12:16,marginBottom:16}}>
@@ -1861,7 +1872,7 @@ export default function App() {
     </div>
 
     {showDing      &&<DingModal       onClose={()=>setShowDing(false)}/>}
-    {showSettings&&<SettingsModal learnerId={selectedLearner} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)}/>}
+    {showSettings&&<SettingsModal learnerId={selectedLearner} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
     {showAddLearner&&<AddLearnerModal onAdd={l=>{
       const sorted=[...learners,l].sort((a,b)=>{if(!a.date_of_service)return 1;if(!b.date_of_service)return -1;return a.date_of_service<b.date_of_service?-1:1;});
       setLearners(sorted);setSelectedLearner(l.id);setShowAddLearner(false);
