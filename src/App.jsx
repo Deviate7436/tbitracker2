@@ -96,6 +96,7 @@ async function sb(path, method="GET", body=null, extra_headers={}) {
 const DB = {
   // Learners
   getLearners: () => sb("learners?select=*&order=name"),
+  getLearner: (id) => sb(`learners?id=eq.${id}&select=*`).then(rows => (rows || [])[0] || null),
   upsertLearner: (l) => sb("learners?on_conflict=id", "POST", l, {"Prefer":"resolution=merge-duplicates,return=representation"}),
   updateLearnerLastSignedIn: (id, lastSignedInAt) => sb(`learners?id=eq.${id}`, "PATCH", {last_signed_in_at:lastSignedInAt}, {"Prefer":"return=representation"}),
   deleteLearner: (id) => sb(`learners?id=eq.${id}`, "DELETE"),
@@ -178,6 +179,19 @@ function formatInstructorNames(names) {
 function instructorEmails(value) {
   const emails = parseInstructorNames(value).map(name => INSTRUCTORS[name]).filter(Boolean);
   return emails.length ? emails.join(",") : "cantorchilds@tbiport.org";
+}
+
+function normalizeVoiceTrack(value) {
+  const v=String(value||"lower").toLowerCase();
+  return v==="higher"||v==="high" ? "higher" : "lower";
+}
+function getDefaultAudioForVoice(defaultMedia, voiceTrack) {
+  const dm=defaultMedia||{};
+  const lower={url:dm.audio_lower_url||dm.default_audio_lower_url||dm.audio||null,name:dm.audio_lower_name||dm.default_audio_lower_name||dm.audio_name||null};
+  const higher={url:dm.audio_higher_url||dm.default_audio_higher_url||null,name:dm.audio_higher_name||dm.default_audio_higher_name||null};
+  const track=normalizeVoiceTrack(voiceTrack);
+  if(track==="higher") return higher.url ? higher : lower;
+  return lower.url ? lower : higher;
 }
 
 async function sendAssignmentEmail({learner, assignment}) {
@@ -576,7 +590,8 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
               <div><div style={LS}>Default PDF</div><PdfUploadControl label="Default PDF" value={dm.pdf} name={dm.pdf_name} onUploaded={(url,label)=>applyDefault(item,{pdf:url,pdf_name:label})} onRemove={()=>applyDefault(item,{pdf:null,pdf_name:null})}/></div>
-              <div><div style={LS}>Default Audio</div><AudioUploadControl label="Default Audio" value={dm.audio} name={dm.audio_name} onUploaded={(url,label)=>applyDefault(item,{audio:url,audio_name:label})} onRemove={()=>applyDefault(item,{audio:null,audio_name:null})}/></div>
+              <div><div style={LS}>Lower Voice Audio</div><AudioUploadControl label="Lower Voice Audio" value={dm.audio_lower_url||dm.audio} name={dm.audio_lower_name||dm.audio_name} onUploaded={(url,label)=>applyDefault(item,{audio_lower_url:url,audio_lower_name:label,audio:url,audio_name:label})} onRemove={()=>applyDefault(item,{audio_lower_url:null,audio_lower_name:null,audio:null,audio_name:null})}/></div>
+              <div><div style={LS}>Higher Voice Audio</div><AudioUploadControl label="Higher Voice Audio" value={dm.audio_higher_url} name={dm.audio_higher_name} onUploaded={(url,label)=>applyDefault(item,{audio_higher_url:url,audio_higher_name:label})} onRemove={()=>applyDefault(item,{audio_higher_url:null,audio_higher_name:null})}/></div>
             </div>
           </div>;
         })}
@@ -640,7 +655,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia}) {
+function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower"}) {
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
@@ -653,8 +668,9 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 
   const effectivePdf=prayer.pdf||(defaultMedia?.pdf)||null;
   const effectivePdfName=prayer.pdf_name||(defaultMedia?.pdf_name)||null;
-  const effectiveAudio=prayer.audio||(defaultMedia?.audio)||null;
-  const effectiveAudioName=prayer.audio_name||(defaultMedia?.audio_name)||null;
+  const selectedDefaultAudio=getDefaultAudioForVoice(defaultMedia,voiceTrack);
+  const effectiveAudio=prayer.audio||selectedDefaultAudio.url||null;
+  const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
   useEffect(()=>{
@@ -742,13 +758,14 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 }
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
-function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
+function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrack=null}) {
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [showAddPrayer,setShowAddPrayer]=useState(false);
   const [collapsedParts,setCollapsedParts]=useState({});
   const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"false");}catch{return false;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
+  const [currentLearner,setCurrentLearner]=useState(null);
 
   function dmKey(name,part){return `${name}|${part}`;}
   function defaultSort(a,b){return ((a.sort_order??0)-(b.sort_order??0))||((a.page||9999)-(b.page||9999))||a.name.localeCompare(b.name);}
@@ -756,7 +773,8 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
   async function load() {
     setLoading(true);setError(null);
     try {
-      const [pRows,lRows,attRows,dmRows]=await Promise.all([DB.getPrayers(learnerId),DB.getPartLabels(learnerId),DB.getAttendance(learnerId),DB.getDefaultMedia()]);
+      const [pRows,lRows,attRows,dmRows,learnerRow]=await Promise.all([DB.getPrayers(learnerId),DB.getPartLabels(learnerId),DB.getAttendance(learnerId),DB.getDefaultMedia(),DB.getLearner(learnerId)]);
+      setCurrentLearner(learnerRow||null);
       const labels={...DEFAULT_PART_LABELS};
       (lRows||[]).forEach(r=>{labels[r.part_number]=r.label;});
       setPartLabels(labels);
@@ -895,6 +913,7 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0}) {
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
+          voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
         />)}
       </div>;
     })}
@@ -987,9 +1006,9 @@ function PracticeSessions({learnerId,role}) {
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,marginBottom:16}}>Practice Log</h3>
     {role==="learner"&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
       <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:14}}>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
-          <div><label style={LS}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={{...IS,fontSize:15}}/></div>
-          <div><label style={LS}>Duration (minutes)</label><input type="number" value={newDur} onChange={e=>setNewDur(e.target.value)} placeholder="20" style={{...IS,fontSize:15}}/></div>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 180px",gap:isMobile?14:28,alignItems:"end"}}>
+          <div style={{maxWidth:isMobile?"100%":220}}><label style={LS}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={{...IS,fontSize:15,width:"100%",boxSizing:"border-box"}}/></div>
+          <div style={{maxWidth:isMobile?"100%":180}}><label style={LS}>Duration (minutes)</label><input type="number" value={newDur} onChange={e=>setNewDur(e.target.value)} placeholder="20" style={{...IS,fontSize:15,width:"100%",boxSizing:"border-box"}}/></div>
         </div>
         <div><label style={LS}>Notes (optional)</label><input value={newNotes} onChange={e=>setNewNotes(e.target.value)} placeholder="What did you practice today?" style={{...IS,fontSize:15}}/></div>
       </div>
@@ -1128,18 +1147,20 @@ function SmartReview({learnerId}) {
 
   async function load(){
     setLoading(true);
-    const [rows,defaultRows]=await Promise.all([DB.getPrayers(learnerId),DB.getDefaultMedia()]);
+    const [rows,defaultRows,learnerRow]=await Promise.all([DB.getPrayers(learnerId),DB.getDefaultMedia(),DB.getLearner(learnerId)]);
+    const voiceTrack=learnerRow?.voice_track||"lower";
     const defaults={};
-    (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={pdf:d.pdf,audio:d.audio,pdf_name:d.pdf_name,audio_name:d.audio_name};});
+    (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={...d};});
     const ps=(rows||[]).filter(p=>p.status!=="Not Started"&&!p.hidden_from_learner).map(p=>{
       const dm=defaults[dmKey(p.name,p.part)]||{};
+      const selectedDefaultAudio=getDefaultAudioForVoice(dm,voiceTrack);
       return {...p,
         effective_pdf:p.pdf||dm.pdf||null,
         effective_pdf_name:p.pdf_name||dm.pdf_name||null,
-        effective_audio:p.audio||dm.audio||null,
-        effective_audio_name:p.audio_name||dm.audio_name||null,
+        effective_audio:p.audio||selectedDefaultAudio.url||null,
+        effective_audio_name:p.audio_name||selectedDefaultAudio.name||null,
         has_default_pdf:!p.pdf&&!!dm.pdf,
-        has_default_audio:!p.audio&&!!dm.audio,
+        has_default_audio:!p.audio&&!!selectedDefaultAudio.url,
       };
     }).sort((a,b)=>(a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1);
     setQueue(ps);setLoading(false);
@@ -1271,9 +1292,10 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   const [email1Draft,setEmail1Draft]=useState(l.email1||"");
   const [email2Draft,setEmail2Draft]=useState(l.email2||"");
   const [email3Draft,setEmail3Draft]=useState(l.email3||"");
+  const [voiceTrackDraft,setVoiceTrackDraft]=useState(normalizeVoiceTrack(l.voice_track));
   const [emailOpen,setEmailOpen]=useState(false);
   const [saving,setSaving]=useState(false);
-  useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");setEmailOpen(false);},[l.id]);
+  useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");setVoiceTrackDraft(normalizeVoiceTrack(l.voice_track));setEmailOpen(false);},[l.id,l.voice_track]);
 
   async function savePatch(fields){
     setSaving(true);
@@ -1289,6 +1311,12 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
     await savePatch({instructor:formatInstructorNames(next)||null});
   }
 
+  async function setVoiceTrack(track){
+    const next=normalizeVoiceTrack(track);
+    setVoiceTrackDraft(next);
+    await savePatch({voice_track:next});
+  }
+
   async function saveEmails(){
     const fields={email1:email1Draft.trim()||null,email2:email2Draft.trim()||null,email3:email3Draft.trim()||null};
     if(fields.email1===(l.email1||null)&&fields.email2===(l.email2||null)&&fields.email3===(l.email3||null)) return;
@@ -1296,7 +1324,7 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   }
 
   return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 0.8fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
       <div><div style={LS}>Instructor</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer",flexWrap:"wrap"}}>
@@ -1304,6 +1332,11 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
             <span style={{fontWeight:"700"}}>{name}</span>
             <span style={{color:C.midGray,fontSize:11}}>{email}</span>
           </label>)}
+        </div>
+      </div>
+      <div><div style={LS}>Voice Track</div>
+        <div style={{display:"inline-flex",border:"1px solid #dee2e6",borderRadius:10,overflow:"hidden",background:"white"}}>
+          {["lower","higher"].map(track=><button key={track} onClick={()=>setVoiceTrack(track)} disabled={saving} style={{padding:"7px 12px",border:"none",borderRight:track==="lower"?"1px solid #dee2e6":"none",background:voiceTrackDraft===track?C.blue:"white",color:voiceTrackDraft===track?"white":C.navy,cursor:saving?"not-allowed":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif",fontWeight:"800",textTransform:"capitalize"}}>{track}</button>)}
         </div>
       </div>
       <div style={{background:"#fafbfc",border:"1px solid #e9ecef",borderRadius:10,overflow:"hidden"}}>
@@ -1352,7 +1385,8 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
 // ── Login ──────────────────────────────────────────────────────────────────
 function LoginScreen({onLogin}) {
   const {isMobile}=useBreakpoint();
-  const [mode,setMode]=useState("learner");const [accessKey,setAccessKey]=useState("");const [instrPassword,setInstrPassword]=useState("");const [error,setError]=useState("");const [loading,setLoading]=useState(false);
+  const [mode,setMode]=useState("learner");const [accessKey,setAccessKey]=useState("");const [instrPassword,setInstrPassword]=useState("");const [error,setError]=useState("");const [loading,setLoading]=useState(false);const instrPasswordRef=useRef(null);
+  useEffect(()=>{if(mode==="instructor")setTimeout(()=>instrPasswordRef.current?.focus(),0);},[mode]);
 
   async function handleLearnerLogin(){
     setError("");setLoading(true);
@@ -1372,7 +1406,6 @@ function LoginScreen({onLogin}) {
   function handleInstructorLogin(){setError("");if(instrPassword===INSTRUCTOR_PASSWORD)onLogin("instructor",null);else setError("Incorrect password.");}
 
   return <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.navy} 0%,#0A6FA8 100%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:isMobile?16:24,position:"relative"}}>
-    {mode==="learner"&&<button onClick={()=>{setMode("instructor");setError("");}} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,0.15)",border:"none",color:"rgba(255,255,255,0.7)",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",borderRadius:6,padding:"4px 10px"}}>Instructor Login</button>}
     {mode==="instructor"&&<button onClick={()=>{setMode("learner");setError("");}} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,0.15)",border:"none",color:"rgba(255,255,255,0.7)",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",borderRadius:6,padding:"4px 10px"}}>← Back</button>}
     <div style={{textAlign:"center",marginBottom:isMobile?28:36}}>
       <div style={{background:"white",borderRadius:16,padding:"14px 28px",display:"inline-block",marginBottom:16,boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>
@@ -1388,12 +1421,13 @@ function LoginScreen({onLogin}) {
         <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLearnerLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleLearnerLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Open My Tracker →"}</button>
+        <button onClick={()=>{setMode("instructor");setError("");}} style={{width:"100%",marginTop:10,padding:"10px",background:"transparent",border:`1.5px solid ${C.blue}55`,color:C.blue,borderRadius:10,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Instructor Login</button>
         
       </>:<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
         <p style={{color:C.midGray,fontSize:14,margin:"0 0 24px",fontFamily:"Raleway,sans-serif"}}>Enter your instructor password.</p>
         <label style={LS}>Password</label>
-        <input type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
+        <input ref={instrPasswordRef} type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleInstructorLogin} style={{width:"100%",marginTop:20,padding:"14px",background:C.navy,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer"}}>Sign In →</button>
         
@@ -1871,11 +1905,11 @@ export default function App() {
 
       {/* Nav tabs */}
       <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>{t.label}</button>)}
+        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?190:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>
 
       {selectedLearner&&<>
-        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null}/>}
         {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
