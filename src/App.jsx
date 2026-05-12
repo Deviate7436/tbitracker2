@@ -529,9 +529,9 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
     setSaving(false);
   }
   return <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",background:"#fafbfc",border:"1px solid #e9ecef",borderRadius:10,padding:"4px 8px"}}>
-    <span style={{fontSize:11,color:C.darkBlue,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Lesson Review</span>
+    <span style={{fontSize:11,color:C.darkBlue,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Last Reviewed</span>
     <span style={{fontSize:11,color:last?C.navy:C.midGray,fontWeight:last?"800":"600",fontFamily:"Raleway,sans-serif"}}>{prettyDate(last)}</span>
-    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1}}>{saving?"Logging…":"Log"}</button>
+    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1}}>{saving?"Logging…":"Log Today"}</button>
     <button onClick={()=>setShowHistory(h=>!h)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:0}}>Review History</button>
     {showHistory&&<div style={{flexBasis:"100%",fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:72,overflowY:"auto",background:"white",borderRadius:6,padding:"4px 6px",marginTop:2}}>{reviews.length?reviews.map((r,i)=><div key={r.id||i}><strong>{prettyDate(r.date)}</strong>{r.note&&<span> — {r.note}</span>}</div>):<div style={{fontStyle:"italic"}}>No review history yet.</div>}</div>}
   </div>;
@@ -683,13 +683,13 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   if(hidden&&role==="instructor") return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+    <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",paddingLeft:isMobile?70:76,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
         <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?13:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{prayer.name}</span>
         {prayer.page?<span style={{color:C.midGray,fontSize:11}}>p.{prayer.page}</span>:null}
         <span style={{fontSize:10,color:C.midGray,border:"1px solid #dee2e6",borderRadius:10,padding:"1px 7px",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Hidden</span>
       </div>
-      <button onClick={()=>onHideToggle(prayer.id,false)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif",flexShrink:0}}>Unhide</button>
+      <button onClick={()=>onHideToggle(prayer.id,false)} style={{position:"absolute",top:"50%",left:10,transform:"translateY(-50%)",background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",flexShrink:0}}>Unhide</button>
     </div>
   </>;
 
@@ -698,14 +698,14 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
-      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,fontSize:11,color:C.red,background:"#fff2f2",border:`1px solid ${C.red}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif",zIndex:2}}>Hide</button>}
+      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Hide</button>}
       <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
             {role==="instructor"
-              ?<select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
+              ?<><select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>
               :<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
             {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>}
             {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
@@ -718,13 +718,13 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
             {hasAudio&&!hasPdf
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
-            {role!=="learner"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
+            {role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
           {role==="learner"&&prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>:null}
           {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Notes":"▼ Notes"}</button>
+            <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
           </div>}
         </div>
       </div>
@@ -1688,11 +1688,24 @@ export default function App() {
     }
   }
 
-  // On mount, if already logged in as learner, load their data
+  // On mount, if already logged in as learner, load their data and restore selected tracker
   useEffect(()=>{
-    if(role==="learner"&&learnerId) loadCurrentLearnerData(learnerId);
+    if(role==="learner"&&learnerId) {
+      setSelectedLearner(learnerId);
+      loadCurrentLearnerData(learnerId);
+    }
     else if(role==="instructor") loadLearners();
   },[]);
+
+  // Keep the selected tracker stable across refreshes. Learners always use their own tracker.
+  useEffect(()=>{
+    if(role==="learner"&&learnerId&&selectedLearner!==learnerId) {
+      setSelectedLearner(learnerId);
+      return;
+    }
+    if(selectedLearner) localStorage.setItem("tbi_selectedLearner",JSON.stringify(selectedLearner));
+    else localStorage.removeItem("tbi_selectedLearner");
+  },[role,learnerId,selectedLearner]);
 
   function signOut(){
     setRole(null);setLearnerId(null);setSelectedLearner(null);
