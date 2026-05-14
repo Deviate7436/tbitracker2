@@ -330,6 +330,25 @@ function InlinePageEdit({value,onSave,style={},placeholder="—"}) {
   return <span onClick={()=>setEditing(true)} title="Click to edit page number" style={{...style,cursor:"text",borderBottom:`1.5px dashed ${C.blue}55`,paddingBottom:1}}>{display}</span>;
 }
 
+function SectionHeaderTitle({value,onSave,editable,style={}}) {
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState(value);
+  const ref=useRef(null);
+  useEffect(()=>{setDraft(value);},[value]);
+  useEffect(()=>{if(editing)ref.current?.focus();},[editing]);
+  function commit(){
+    const clean=String(draft||"").trim();
+    setEditing(false);
+    if(clean&&clean!==value)onSave(clean);
+    else setDraft(value);
+  }
+  if(editable&&editing) return <input ref={ref} value={draft} onClick={e=>e.stopPropagation()} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(value);setEditing(false);}}} style={{...style,border:`1.5px solid ${C.blue}`,borderRadius:6,padding:"2px 8px",outline:"none",fontFamily:"Raleway,sans-serif",background:"white",minWidth:120}}/>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+    <span style={style}>{value}</span>
+    {editable&&<button onClick={e=>{e.stopPropagation();setEditing(true);}} style={{background:"transparent",border:"none",color:C.blue,fontSize:11,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",padding:0,textDecoration:"underline"}}>edit</button>}
+  </span>;
+}
+
 function StatusBadge({status}) {
   return <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,background:(STATUS_COLORS[status]||"#adb5bd")+"22",color:STATUS_COLORS[status]||"#adb5bd",border:`1px solid ${STATUS_COLORS[status]||"#adb5bd"}`,fontSize:12,fontWeight:"700",whiteSpace:"nowrap"}}>{status}</span>;
 }
@@ -400,19 +419,62 @@ function ConfirmModal({message,onConfirm,onCancel}) {
   </div>;
 }
 
-function PdfModal({url,name,audioUrl,audioName,onClose}) {
-  const embedUrl=driveToEmbedUrl(url);const viewUrl=driveToViewUrl(url);
+function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
+  const sourceUrl=driveToEmbedUrl(url);
+  const viewUrl=driveToViewUrl(url);
   const hasAudio=!!audioUrl;
+  const displayTitle=title||name||"PDF";
+  const downloadLabel=(name||title||"document").replace(/\.pdf$/i,"") + ".pdf";
+  const [pdfSrc,setPdfSrc]=useState(null);
+  const [loadingPdf,setLoadingPdf]=useState(true);
+  const [pdfError,setPdfError]=useState(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    let objectUrl=null;
+    async function loadPdf(){
+      setLoadingPdf(true);
+      setPdfError(null);
+      setPdfSrc(null);
+      try{
+        // Supabase Storage public URLs sometimes behave like downloads in the browser.
+        // Fetching the file and rendering a local blob URL keeps the PDF inside the app.
+        const res=await fetch(viewUrl||sourceUrl,{mode:"cors"});
+        if(!res.ok)throw new Error(`HTTP ${res.status}`);
+        const blob=await res.blob();
+        const pdfBlob=blob.type==="application/pdf"?blob:new Blob([blob],{type:"application/pdf"});
+        objectUrl=URL.createObjectURL(pdfBlob);
+        if(!cancelled)setPdfSrc(objectUrl);
+      }catch(e){
+        console.warn("In-app PDF fetch failed; falling back to direct embed URL",e);
+        if(!cancelled){
+          setPdfError("Could not load the PDF directly in the app. Trying the embedded viewer instead.");
+          setPdfSrc(sourceUrl||viewUrl);
+        }
+      }finally{
+        if(!cancelled)setLoadingPdf(false);
+      }
+    }
+    if(sourceUrl||viewUrl)loadPdf();
+    return()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[sourceUrl,viewUrl]);
+
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.88)",zIndex:2000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
     <div style={{width:"100%",maxWidth:860,background:"white",borderRadius:16,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",height:"85vh"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",background:C.navy,flexShrink:0}}>
-        <span style={{color:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:15}}>📄 {name||"PDF"}</span>
-        <div style={{display:"flex",gap:10}}><a href={viewUrl} target="_blank" rel="noreferrer" style={{color:C.gold,fontSize:13,textDecoration:"none",border:`1px solid ${C.gold}`,borderRadius:6,padding:"4px 12px",fontFamily:"Raleway,sans-serif"}}>⬈ Open PDF</a><button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer"}}>✕</button></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",background:C.navy,flexShrink:0,gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+          <span style={{color:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📄 {displayTitle}</span>
+          {(pdfSrc||sourceUrl||viewUrl)&&<a href={pdfSrc||sourceUrl||viewUrl} download={downloadLabel} title="Download PDF" style={{color:C.gold,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0}}>⬇</a>}
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer",flexShrink:0}}>✕</button>
       </div>
       {hasAudio&&<div style={{padding:"10px 16px",background:"#f8f9fa",borderBottom:"1px solid #e9ecef",flexShrink:0}}>
         <AudioPlayer url={audioUrl} name={audioName}/>
       </div>}
-      <iframe src={embedUrl} style={{flex:1,border:"none",width:"100%"}} title={name||"PDF"}/>
+      {pdfError&&<div style={{padding:"8px 16px",background:"#fff6e8",borderBottom:"1px solid #f2a54155",color:C.navy,fontSize:12,fontFamily:"Raleway,sans-serif",flexShrink:0}}>{pdfError}</div>}
+      {loadingPdf
+        ?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Loading PDF…</div>
+        :<iframe src={pdfSrc||sourceUrl||viewUrl} style={{flex:1,border:"none",width:"100%"}} title={displayTitle}/>} 
     </div>
   </div>;
 }
@@ -466,6 +528,7 @@ function AudioPlayer({url,name}) {
         <input type="range" min={0} max={duration||1} step={0.01} value={progress} onChange={e=>{if(ref.current){ref.current.currentTime=+e.target.value;setProgress(+e.target.value);}}} style={{width:"100%",accentColor:C.blue,height:4,cursor:"pointer"}}/>
       </div>
       <span style={{fontSize:11,color:C.midGray,flexShrink:0}}>{fmt(progress)}/{fmt(duration)}</span>
+      {directUrl&&<a href={directUrl} download title="Download audio" style={{color:C.blue,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0}}>⬇</a>}
     </div>
     {error&&<div style={{fontSize:11,color:C.red,marginTop:6,fontFamily:"Raleway,sans-serif",lineHeight:1.35}}>{error}{viewUrl&&<> <a href={viewUrl} target="_blank" rel="noreferrer" style={{color:C.blue}}>Open audio</a></>}</div>}
   </div>;
@@ -695,7 +758,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   useEffect(()=>()=>{if(notesTimer.current)clearTimeout(notesTimer.current);},[prayer.id]);
 
   if(hidden&&role==="instructor") return <>
-    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
+    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",paddingLeft:isMobile?70:76,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
@@ -709,7 +772,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 
   const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
   return <>
-    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
+    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Hide</button>}
@@ -900,9 +963,12 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:isCollapsed?0:12,cursor:"pointer"}} onClick={()=>toggleCollapse(part)}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{color:C.midGray,fontSize:14,userSelect:"none"}}>{isCollapsed?"▶":"▼"}</span>
-            <div onClick={e=>e.stopPropagation()}>
-              {role==="instructor"?<InlineEdit value={label} onSave={t=>renameSection(part,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}>{label}</span>}
-            </div>
+            <SectionHeaderTitle
+              value={label}
+              editable={role==="instructor"}
+              onSave={t=>renameSection(part,t)}
+              style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}
+            />
           </div>
           <span style={{fontSize:13,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{done}/{allPP.length}</span>
         </div>
@@ -1214,7 +1280,7 @@ function SmartReview({learnerId}) {
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
   return <div>
-    {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)}/>}
+    {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={current.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)}/>}
     {showAudioModal&&hasAudio&&!hasPdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowAudioModal(false)}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <h3 style={{margin:0,fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18}}>🧠 Smart Review</h3>
@@ -1452,7 +1518,6 @@ function LoginScreen({onLogin}) {
   function handleInstructorLogin(){setError("");if(instrPassword===INSTRUCTOR_PASSWORD)onLogin("instructor",null);else setError("Incorrect password.");}
 
   return <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.navy} 0%,#0A6FA8 100%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:isMobile?16:24,position:"relative"}}>
-    {mode==="instructor"&&<button onClick={()=>{setMode("learner");setError("");}} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,0.15)",border:"none",color:"rgba(255,255,255,0.7)",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",borderRadius:6,padding:"4px 10px"}}>← Back</button>}
     <div style={{textAlign:"center",marginBottom:isMobile?28:36}}>
       <div style={{background:"white",borderRadius:16,padding:"14px 28px",display:"inline-block",marginBottom:16,boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>
         <img src={`data:image/jpeg;base64,${LOGO_B64}`} alt="Temple Beth Israel" style={{height:isMobile?40:52,display:"block"}}/>
@@ -1467,7 +1532,7 @@ function LoginScreen({onLogin}) {
         <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLearnerLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleLearnerLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Open My Tracker →"}</button>
-        <button onClick={()=>{setMode("instructor");setError("");}} style={{display:"block",width:"70%",margin:"10px auto 0",padding:"8px",background:"transparent",border:`1.5px solid ${C.blue}55`,color:C.blue,borderRadius:10,fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Instructor Login</button>
+        <button onClick={()=>{setMode("instructor");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Instructor Login</button>
         
       </>:<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
@@ -1476,6 +1541,7 @@ function LoginScreen({onLogin}) {
         <input ref={instrPasswordRef} type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleInstructorLogin} style={{width:"100%",marginTop:20,padding:"14px",background:C.navy,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer"}}>Sign In →</button>
+        <button onClick={()=>{setMode("learner");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Learner Login</button>
         
       </>}
     </div>
@@ -1951,7 +2017,7 @@ export default function App() {
 
       {/* Nav tabs */}
       <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?165:undefined,textAlign:"center"}}>{t.label}</button>)}
+        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?190:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>
 
       {selectedLearner&&<>
