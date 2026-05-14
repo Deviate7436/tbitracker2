@@ -525,7 +525,6 @@ function AudioUploadControl({label="Audio",value,name,onUploaded,onRemove}) {
 }
 
 function LessonReviewInline({prayer,onLinkUpdate}) {
-  const [showHistory,setShowHistory]=useState(false);
   const [saving,setSaving]=useState(false);
   const reviews=prayer.instructor_reviews||[];
   const last=prayer.last_reviewed||null;
@@ -542,12 +541,11 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
     await onLinkUpdate(prayer.id,{last_reviewed:today,instructor_reviews:updated});
     setSaving(false);
   }
+  const reviewTextStyle={fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"};
   return <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",background:"#fafbfc",border:"1px solid #e9ecef",borderRadius:10,padding:"4px 8px"}}>
-    <span style={{fontSize:11,color:C.darkBlue,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Last Reviewed</span>
-    <span style={{fontSize:11,color:last?C.navy:C.midGray,fontWeight:last?"800":"600",fontFamily:"Raleway,sans-serif"}}>{prettyDate(last)}</span>
+    <span style={reviewTextStyle}>Last Reviewed</span>
+    <span style={reviewTextStyle}>{prettyDate(last)}</span>
     <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1}}>{saving?"Logging…":"Log Today"}</button>
-    <button onClick={()=>setShowHistory(h=>!h)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:0}}>Review History</button>
-    {showHistory&&<div style={{flexBasis:"100%",fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",maxHeight:72,overflowY:"auto",background:"white",borderRadius:6,padding:"4px 6px",marginTop:2}}>{reviews.length?reviews.map((r,i)=><div key={r.id||i}><strong>{prettyDate(r.date)}</strong>{r.note&&<span> — {r.note}</span>}</div>):<div style={{fontStyle:"italic"}}>No review history yet.</div>}</div>}
   </div>;
 }
 
@@ -1286,6 +1284,54 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   </div>;
 }
 
+// ── Learner Name Editor ────────────────────────────────────────────────────
+function LearnerNameEditor({l,isMobile,onSave,formatLastSignedIn}) {
+  const [editingName,setEditingName]=useState(false);
+  const [editingHebrew,setEditingHebrew]=useState(false);
+  const [nameDraft,setNameDraft]=useState(l.name||"");
+  const [hebrewDraft,setHebrewDraft]=useState(l.hebrew_name||"");
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{setNameDraft(l.name||"");setHebrewDraft(l.hebrew_name||"");setEditingName(false);setEditingHebrew(false);},[l.id,l.name,l.hebrew_name]);
+  async function savePatch(fields){
+    setSaving(true);
+    const patch={...l,...fields};
+    await DB.upsertLearner(patch);
+    onSave(patch);
+    setSaving(false);
+  }
+  async function saveName(){
+    const clean=nameDraft.trim();
+    if(!clean){setNameDraft(l.name||"");setEditingName(false);return;}
+    await savePatch({name:clean});
+    setEditingName(false);
+  }
+  async function saveHebrew(){
+    await savePatch({hebrew_name:hebrewDraft.trim()||null});
+    setEditingHebrew(false);
+  }
+  const editBtn={background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:0};
+  return <div style={{gridColumn:isMobile?"1/-1":"span 2",minWidth:220}}>
+    <div style={LS}>Learner</div>
+    {editingName?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:6}}>
+      <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveName()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:isMobile?16:17,fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,minWidth:180}} autoFocus/>
+      <button onClick={saveName} disabled={saving} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:saving?"not-allowed":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
+      <button onClick={()=>{setNameDraft(l.name||"");setEditingName(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
+    </div>:<div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</span>
+      <button onClick={()=>setEditingName(true)} style={editBtn}>edit</button>
+    </div>}
+    <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2,marginBottom:8}}>Last signed in: {formatLastSignedIn(l.last_signed_in_at)}</div>
+    {editingHebrew?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+      <input value={hebrewDraft} onChange={e=>setHebrewDraft(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveHebrew()} placeholder="Hebrew name" style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:14,fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,minWidth:180}} autoFocus/>
+      <button onClick={saveHebrew} disabled={saving} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:saving?"not-allowed":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
+      <button onClick={()=>{setHebrewDraft(l.hebrew_name||"");setEditingHebrew(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
+    </div>:<div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+      <span style={{color:l.hebrew_name?C.blue:C.midGray,fontSize:15,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{l.hebrew_name||"No Hebrew name"}</span>
+      <button onClick={()=>setEditingHebrew(true)} style={editBtn}>edit</button>
+    </div>}
+  </div>;
+}
+
 // ── Learner Info Editor ────────────────────────────────────────────────────
 function LearnerInfoEditor({l,isMobile,onSave}) {
   const [instrDraft,setInstrDraft]=useState(parseInstructorNames(l.instructor));
@@ -1421,7 +1467,7 @@ function LoginScreen({onLogin}) {
         <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLearnerLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleLearnerLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Open My Tracker →"}</button>
-        <button onClick={()=>{setMode("instructor");setError("");}} style={{width:"100%",marginTop:10,padding:"10px",background:"transparent",border:`1.5px solid ${C.blue}55`,color:C.blue,borderRadius:10,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Instructor Login</button>
+        <button onClick={()=>{setMode("instructor");setError("");}} style={{display:"block",width:"70%",margin:"10px auto 0",padding:"8px",background:"transparent",border:`1.5px solid ${C.blue}55`,color:C.blue,borderRadius:10,fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Instructor Login</button>
         
       </>:<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
@@ -1790,15 +1836,16 @@ export default function App() {
 
   function formatServiceDate(ds){
     if(!ds) return "";
-    const [y,m,d]=ds.split("-");
-    return `${parseInt(m)}/${parseInt(d)}/${y}`;
+    const date=new Date(ds+"T12:00:00");
+    if(Number.isNaN(date.getTime())) return ds;
+    return date.toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"});
   }
 
   function formatLastSignedIn(value){
     if(!value) return "Never";
     const date=new Date(value);
     if(Number.isNaN(date.getTime())) return "Never";
-    return date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+    return date.toLocaleDateString(undefined,{month:"2-digit",day:"2-digit",year:"numeric"});
   }
 
   const activeLearner=role==="instructor"?learners.find(l=>l.id===selectedLearner):currentLearnerData;
@@ -1885,9 +1932,8 @@ export default function App() {
       {/* Instructor learner info card */}
       {selectedLearner&&role==="instructor"&&(()=>{const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);if(!l)return null;return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fit,minmax(140px,1fr))",gap:isMobile?12:16,marginBottom:16}}>
-          <div style={{gridColumn:isMobile?"1/-1":"auto"}}><div style={LS}>Learner</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:15,fontWeight:"600"}}>{l.hebrew_name}</div>}</div>
+          <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
           <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-          <div><div style={LS}>Last Signed In</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:l.last_signed_in_at?C.navy:C.midGray,fontSize:14}}>{formatLastSignedIn(l.last_signed_in_at)}</div></div>
           <div><div style={LS}>Access Key</div>
             {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
@@ -1905,7 +1951,7 @@ export default function App() {
 
       {/* Nav tabs */}
       <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?190:undefined,textAlign:"center"}}>{t.label}</button>)}
+        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?165:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>
 
       {selectedLearner&&<>
