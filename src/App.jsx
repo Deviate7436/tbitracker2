@@ -940,16 +940,19 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
   </>;
 
   const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
+  const learnerCardBg = role==="learner"
+    ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : "white")
+    : "white";
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
+    <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Hide</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
         <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
         {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
       </div>}
-      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):undefined,display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
@@ -969,7 +972,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
             {role==="learner"&&prayer.last_reviewed&&<span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Last reviewed: {prayer.last_reviewed}</span>}
           </div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",paddingRight:role==="learner"?(isMobile?6:10):0}}>
           {role==="learner"&&prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>:null}
           {role==="instructor"?null:null}
         </div>
@@ -2189,7 +2192,7 @@ export default function App() {
 
       {/* Nav tabs */}
       <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:isMobile?"9px 14px":"10px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?13:14,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?190:undefined,textAlign:"center"}}>{t.label}</button>)}
+        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>
 
       {selectedLearner&&<>
