@@ -398,6 +398,17 @@ async function downloadFromUrl(url, filename, mimeType = "application/octet-stre
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
 }
 
+
+function DownloadIconButton({onClick,title,color=C.navy}) {
+  return <button onClick={onClick} title={title} aria-label={title} style={{background:"none",border:"none",color,display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,cursor:"pointer",padding:2,flexShrink:0}}>
+    <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{display:"block"}}>
+      <path d="M12 3v11" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"/>
+      <path d="M7.5 9.8 12 14.3l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M5 16.5v2.2c0 .9.7 1.6 1.6 1.6h10.8c.9 0 1.6-.7 1.6-1.6v-2.2" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"/>
+    </svg>
+  </button>;
+}
+
 function playDingSound() {
   try{const audio=new Audio(`data:audio/mp3;base64,${DING_B64}`);audio.volume=0.9;audio.play().catch(()=>{});}catch(e){}
 }
@@ -625,7 +636,7 @@ function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",background:C.navy,flexShrink:0,gap:12}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <span style={{color:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📄 {displayTitle}</span>
-          {url&&<button onClick={()=>downloadFromUrl(url,downloadLabel,"application/pdf").catch(()=>alert("Could not download the PDF."))} title="Download PDF" aria-label="Download PDF" style={{background:"none",border:"none",color:C.gold,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0,cursor:"pointer",padding:0}}>⬇</button>}
+          {url&&<DownloadIconButton onClick={()=>downloadFromUrl(url,downloadLabel,"application/pdf").catch(()=>alert("Could not download the PDF."))} title="Download PDF" color={C.gold}/>}
         </div>
         <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer",flexShrink:0}}>✕</button>
       </div>
@@ -686,7 +697,7 @@ function AudioPlayer({url,name}) {
         <input type="range" min={0} max={duration||1} step={0.01} value={progress} onChange={e=>{if(ref.current){ref.current.currentTime=+e.target.value;setProgress(+e.target.value);}}} style={{width:"100%",accentColor:C.blue,height:4,cursor:"pointer"}}/>
       </div>
       <span style={{fontSize:11,color:C.midGray,flexShrink:0}}>{fmt(progress)}/{fmt(duration)}</span>
-      {directUrl&&<button onClick={()=>downloadFromUrl(directUrl,(name||"audio").replace(/\.[^.]+$/i,"") + ".mp3","audio/mpeg").catch(()=>alert("Could not download the audio."))} title="Download audio" style={{background:"none",border:"none",color:C.blue,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0,cursor:"pointer",padding:0}}>⬇</button>}
+      {directUrl&&<DownloadIconButton onClick={()=>downloadFromUrl(directUrl,(name||"audio").replace(/\.[^.]+$/i,"") + ".mp3","audio/mpeg").catch(()=>alert("Could not download the audio."))} title="Download audio" color={C.blue}/>}
     </div>
     {error&&<div style={{fontSize:11,color:C.red,marginTop:6,fontFamily:"Raleway,sans-serif",lineHeight:1.35}}>{error}{viewUrl&&<> <a href={viewUrl} target="_blank" rel="noreferrer" style={{color:C.blue}}>Open audio</a></>}</div>}
   </div>;
@@ -750,7 +761,7 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
   const reviews=prayer.instructor_reviews||[];
   const last=prayer.last_reviewed||null;
   function prettyDate(value){
-    if(!value)return "Not reviewed yet";
+    if(!value)return "Never";
     const d=new Date(value+"T12:00:00");
     if(Number.isNaN(d.getTime()))return value;
     return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
@@ -934,14 +945,16 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Hide</button>}
-      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+      {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
+        <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
+        {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
+      </div>}
+      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):undefined,display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
-            {role==="instructor"
-              ?<><select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>
-              :<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
+            {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
             {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>}
             {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
           </div>
@@ -958,11 +971,12 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
           {role==="learner"&&prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>:null}
-          {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
-          </div>}
+          {role==="instructor"?null:null}
         </div>
       </div>
+      {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
+        <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
+      </div>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
         <div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
           <div><div style={LS}>PDF Override</div><PdfUploadControl label="Learner PDF" value={prayer.pdf} name={prayer.pdf_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/></div>
