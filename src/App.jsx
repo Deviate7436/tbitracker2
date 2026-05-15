@@ -941,7 +941,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 
   const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
   const learnerCardBg = role==="learner"
-    ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : "white")
+    ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : prayer.status==="Needs Review" ? "#eaf3ff" : "white")
     : "white";
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
@@ -1456,7 +1456,6 @@ function SmartReview({learnerId}) {
 
   return <div>
     {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={current.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)}/>}
-    {showAudioModal&&hasAudio&&!hasPdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowAudioModal(false)}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <h3 style={{margin:0,fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18}}>🧠 Smart Review</h3>
       <span style={{color:C.midGray,fontSize:13,fontFamily:"Raleway,sans-serif"}}>{idx+1} / {total}</span>
@@ -1473,12 +1472,9 @@ function SmartReview({learnerId}) {
           {days===null&&<span style={{fontSize:12,color:C.purple,border:`1px solid ${C.purple}33`,borderRadius:20,padding:"3px 10px",fontFamily:"Raleway,sans-serif"}}>Never reviewed</span>}
           {days!==null&&<span style={{fontSize:12,color:C.midGray,border:"1px solid #e9ecef",borderRadius:20,padding:"3px 10px",fontFamily:"Raleway,sans-serif"}}>{days===0?"Reviewed today":`${days}d ago`}</span>}
         </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:hasPdf&&hasAudio?0:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
           {hasPdf&&<button onClick={()=>setShowPdfModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
-          {hasAudio&&!hasPdf&&<button onClick={()=>setShowAudioModal(true)} style={{padding:"6px 14px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:13,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>}
         </div>
-        {hasAudio&&hasPdf&&<div style={{marginBottom:8}}><AudioPlayer url={effectiveAudio} name={effectiveAudioName}/></div>}
-
       </div>
     </div>
     <div style={{background:"white",borderRadius:16,padding:"20px 24px",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
