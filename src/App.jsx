@@ -353,6 +353,37 @@ async function fetchAsBlobUrl(candidates, mimeType = "application/pdf") {
   throw lastError || new Error("File could not be loaded.");
 }
 
+
+async function fetchAsArrayBuffer(candidates) {
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(candidate.url, { mode: "cors", headers: candidate.headers || {} });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) throw new Error("Empty file");
+      return buffer;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error("File could not be loaded.");
+}
+
+const PDFJS_MODULE_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
+const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
+let pdfJsModulePromise = null;
+async function loadPdfJsModule() {
+  if (!pdfJsModulePromise) {
+    const dynamicImport = new Function("url", "return import(url)");
+    pdfJsModulePromise = dynamicImport(PDFJS_MODULE_URL).then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+      return pdfjs;
+    });
+  }
+  return pdfJsModulePromise;
+}
+
 async function downloadFromUrl(url, filename, mimeType = "application/octet-stream") {
   const objectUrl = await fetchAsBlobUrl([{ url }], mimeType).catch(async () => {
     const candidates = mimeType === "application/pdf" ? pdfFetchCandidates(url) : [{ url: driveToDirectUrl(url) || url }];
@@ -485,62 +516,123 @@ function ConfirmModal({message,onConfirm,onCancel}) {
   </div>;
 }
 
+function PdfCanvasDocument({ url, title }) {
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pdfDoc = null;
+    const container = containerRef.current;
+    if (container) container.replaceChildren();
+
+    async function renderPdf() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [pdfjs, pdfData] = await Promise.all([
+          loadPdfJsModule(),
+          fetchAsArrayBuffer(pdfFetchCandidates(url))
+        ]);
+        if (cancelled) return;
+
+        const loadingTask = pdfjs.getDocument({ data: pdfData });
+        pdfDoc = await loadingTask.promise;
+        if (cancelled) return;
+
+        const target = containerRef.current;
+        if (!target) return;
+        target.replaceChildren();
+
+        const availableWidth = Math.max(260, Math.min(820, target.clientWidth ? target.clientWidth - 24 : 760));
+        const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+
+        for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
+          if (cancelled) return;
+
+          const page = await pdfDoc.getPage(pageNumber);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const cssScale = availableWidth / baseViewport.width;
+          const viewport = page.getViewport({ scale: cssScale });
+
+          const pageWrap = document.createElement("div");
+          pageWrap.style.margin = "0 auto 18px";
+          pageWrap.style.maxWidth = `${Math.ceil(viewport.width)}px`;
+          pageWrap.style.background = "white";
+          pageWrap.style.borderRadius = "10px";
+          pageWrap.style.boxShadow = "0 2px 12px rgba(0,0,0,0.18)";
+          pageWrap.style.overflow = "hidden";
+
+          const label = document.createElement("div");
+          label.textContent = pdfDoc.numPages > 1 ? `Page ${pageNumber} of ${pdfDoc.numPages}` : "Page 1";
+          label.style.fontFamily = "Raleway, sans-serif";
+          label.style.fontSize = "11px";
+          label.style.fontWeight = "700";
+          label.style.color = C.midGray;
+          label.style.padding = "7px 10px";
+          label.style.borderBottom = "1px solid #e9ecef";
+          label.style.background = "#f8f9fa";
+
+          const canvas = document.createElement("canvas");
+          canvas.setAttribute("aria-label", `${title || "PDF"} page ${pageNumber}`);
+          canvas.style.display = "block";
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          canvas.width = Math.floor(viewport.width * pixelRatio);
+          canvas.height = Math.floor(viewport.height * pixelRatio);
+
+          pageWrap.appendChild(label);
+          pageWrap.appendChild(canvas);
+          target.appendChild(pageWrap);
+
+          const context = canvas.getContext("2d");
+          context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+          await page.render({ canvasContext: context, viewport }).promise;
+        }
+      } catch (e) {
+        console.warn("PDF.js render failed", e);
+        if (!cancelled) setError("Could not render this PDF inside the app. Try removing and re-uploading the PDF, then open it again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    if (url) renderPdf();
+    return () => {
+      cancelled = true;
+      if (pdfDoc && typeof pdfDoc.destroy === "function") {
+        try { pdfDoc.destroy(); } catch (e) {}
+      }
+      if (containerRef.current) containerRef.current.replaceChildren();
+    };
+  }, [url, title]);
+
+  return <div style={{flex:1,position:"relative",overflow:"auto",background:"#6c757d22",padding:12}}>
+    {loading && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:C.midGray,fontFamily:"Raleway,sans-serif",background:"rgba(255,255,255,0.72)",zIndex:1}}>Rendering PDF…</div>}
+    {error && <div style={{padding:16,margin:"0 auto",maxWidth:520,borderRadius:12,background:"#fff6e8",color:C.navy,fontSize:13,fontFamily:"Raleway,sans-serif",textAlign:"center"}}>{error}</div>}
+    <div ref={containerRef} style={{width:"100%"}} />
+  </div>;
+}
+
 function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
-  const sourceUrl=driveToEmbedUrl(url);
-  const viewUrl=driveToViewUrl(url);
   const hasAudio=!!audioUrl;
   const displayTitle=title||name||"PDF";
   const downloadLabel=(name||title||"document").replace(/\.pdf$/i,"") + ".pdf";
-  const [pdfSrc,setPdfSrc]=useState(null);
-  const [loadingPdf,setLoadingPdf]=useState(true);
-  const [pdfError,setPdfError]=useState(null);
-
-  useEffect(()=>{
-    let cancelled=false;
-    let objectUrl=null;
-    async function loadPdf(){
-      setLoadingPdf(true);
-      setPdfError(null);
-      setPdfSrc(null);
-      try{
-        // Always render a local blob URL. Do not fall back to the public PDF URL,
-        // because some browsers treat that URL as a download instead of an inline document.
-        objectUrl=await fetchAsBlobUrl(pdfFetchCandidates(url), "application/pdf");
-        if(!cancelled)setPdfSrc(objectUrl);
-      }catch(e){
-        console.warn("In-app PDF fetch failed",e);
-        if(!cancelled){
-          setPdfError("Could not load this PDF inside the app. Try removing and re-uploading the PDF, then open it again.");
-          setPdfSrc(null);
-        }
-      }finally{
-        if(!cancelled)setLoadingPdf(false);
-      }
-    }
-    if(url)loadPdf();
-    return()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl);};
-  },[url]);
 
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.88)",zIndex:2000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
     <div style={{width:"100%",maxWidth:860,background:"white",borderRadius:16,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",height:"85vh"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",background:C.navy,flexShrink:0,gap:12}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <span style={{color:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📄 {displayTitle}</span>
-          {url&&<button onClick={()=>downloadFromUrl(url,downloadLabel,"application/pdf").catch(()=>alert("Could not download the PDF."))} title="Download PDF" style={{background:"none",border:"none",color:C.gold,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0,cursor:"pointer",padding:0}}>⬇</button>}
+          {url&&<button onClick={()=>downloadFromUrl(url,downloadLabel,"application/pdf").catch(()=>alert("Could not download the PDF."))} title="Download PDF" aria-label="Download PDF" style={{background:"none",border:"none",color:C.gold,fontSize:18,textDecoration:"none",lineHeight:1,flexShrink:0,cursor:"pointer",padding:0}}>⬇</button>}
         </div>
         <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer",flexShrink:0}}>✕</button>
       </div>
       {hasAudio&&<div style={{padding:"10px 16px",background:"#f8f9fa",borderBottom:"1px solid #e9ecef",flexShrink:0}}>
         <AudioPlayer url={audioUrl} name={audioName}/>
       </div>}
-      {pdfError&&<div style={{padding:"8px 16px",background:"#fff6e8",borderBottom:"1px solid #f2a54155",color:C.navy,fontSize:12,fontFamily:"Raleway,sans-serif",flexShrink:0}}>{pdfError}</div>}
-      {loadingPdf
-        ?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Loading PDF…</div>
-        :pdfSrc
-          ?<object data={pdfSrc} type="application/pdf" style={{flex:1,border:"none",width:"100%",height:"100%"}} aria-label={displayTitle}>
-            <iframe src={pdfSrc} style={{border:"none",width:"100%",height:"100%"}} title={displayTitle}/>
-          </object>
-          :<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,color:C.midGray,fontFamily:"Raleway,sans-serif",textAlign:"center"}}>PDF unavailable in the in-app viewer.</div>}
+      <PdfCanvasDocument url={url} title={displayTitle}/>
     </div>
   </div>;
 }
