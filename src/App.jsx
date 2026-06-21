@@ -1452,7 +1452,7 @@ function Assignments({learnerId,role,learner}) {
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Adding…":"+ Add Assignment"}</Btn>
+        <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Sending…":"Save & Send"}</Btn>
         {hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Email sends automatically to contacts.</span>}
         {!hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>No contact emails on file.</span>}
       </div>
@@ -2118,7 +2118,27 @@ export default function App() {
   const [learnerId,setLearnerId]=useState(()=>localStorage.getItem("tbi_learner_id")||null);
   const [learners,setLearners]=useState([]);
   const [selectedLearner,setSelectedLearner]=useState(()=>{try{const r=JSON.parse(localStorage.getItem("tbi_selectedLearner")||"null");return r;}catch{return null;}});
-  const [activeTab,setActiveTab]=useState(()=>localStorage.getItem("tbi_role")==="learner"?"home":"prayers");
+  const [activeTab,setActiveTab]=useState(()=>{
+    const hash=window.location.hash.replace("#","");
+    const valid=["prayers","assignments","practicelog","smartreview","services","home"];
+    if(hash&&valid.includes(hash)) return hash;
+    return localStorage.getItem("tbi_role")==="learner"?"home":"prayers";
+  });
+  // Sync hash → tab on back/forward
+  useEffect(()=>{
+    function onHashChange(){
+      const hash=window.location.hash.replace("#","");
+      const valid=["prayers","assignments","practicelog","smartreview","services","home"];
+      if(hash&&valid.includes(hash)) setActiveTab(hash);
+    }
+    window.addEventListener("hashchange",onHashChange);
+    return ()=>window.removeEventListener("hashchange",onHashChange);
+  },[]);
+  function goTab(id){
+    if(id==="home") window.history.pushState(null,"","#home");
+    else window.history.pushState(null,"",`#${id}`);
+    setActiveTab(id);
+  }
   const [learnerViewMode,setLearnerViewMode]=useState("simplified");
   const [showDing,setShowDing]=useState(false);
   const [showAddLearner,setShowAddLearner]=useState(false);
@@ -2175,10 +2195,10 @@ export default function App() {
   async function handleLogin(r,lid){
     setRole(r); persistLogin(r,lid);
     if(r==="learner"&&lid){
-      setLearnerId(lid);setSelectedLearner(lid);setLearners([]);setActiveTab("home");
+      setLearnerId(lid);setSelectedLearner(lid);setLearners([]);goTab("home");
       loadCurrentLearnerData(lid);
     } else {
-      setLearnerId(null);setActiveTab("prayers");await loadLearners();
+      setLearnerId(null);goTab("prayers");await loadLearners();
     }
   }
 
@@ -2203,7 +2223,7 @@ export default function App() {
 
   function signOut(){
     setRole(null);setLearnerId(null);setSelectedLearner(null);
-    setLearners([]);setCurrentLearnerData(null);setShowSettings(false);setActiveTab("prayers");
+    setLearners([]);setCurrentLearnerData(null);setShowSettings(false);goTab("prayers");
     persistLogin(null,null);
   }
 
@@ -2366,12 +2386,12 @@ export default function App() {
 
       {/* Nav tabs */}
       {showNavTabs&&<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
+        {tabs.map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>}
-      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>setActiveTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
+      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
 
       {selectedLearner&&<>
-        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={setActiveTab}/>}
+        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
         {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
