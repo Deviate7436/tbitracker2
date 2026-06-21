@@ -1941,72 +1941,35 @@ function AddLearnerModal({onAdd,onClose}) {
 
 
 // ── Simplified Learner Home ────────────────────────────────────────────────
-function SimplifiedLearnerHome({learnerId,learner,onChoose,onViewMode}) {
+function SimplifiedLearnerHome({onChoose}) {
   const {isMobile}=useBreakpoint();
-  const [loading,setLoading]=useState(true);
-  const [stats,setStats]=useState({total:0,learned:0,inProgress:0,needsReview:0,due:0,assignments:0,sections:{}});
-  async function load(){
-    setLoading(true);
-    try{
-      const [prayers,assignments]=await Promise.all([DB.getPrayers(learnerId),DB.getAssignments(learnerId)]);
-      const visible=(prayers||[]).filter(p=>!p.hidden_from_learner);
-      const learned=visible.filter(p=>p.status==="Learned").length;
-      const inProgress=visible.filter(p=>p.status==="In Progress").length;
-      const needsReview=visible.filter(p=>p.status==="Needs Review").length;
-      const due=visible.filter(p=>p.status!=="Not Started").length;
-      const sections={};
-      visible.forEach(p=>{const key=p.part||1;if(!sections[key])sections[key]={total:0,learned:0};sections[key].total++;if(p.status==="Learned")sections[key].learned++;});
-      setStats({total:visible.length,learned,inProgress,needsReview,due,assignments:(assignments||[]).filter(a=>!a.completed).length,sections});
-    }catch(e){console.error(e);} finally {setLoading(false);}
-  }
-  useEffect(()=>{load();},[learnerId]);
-  const pct=stats.total?Math.round((stats.learned/stats.total)*100):0;
-  const choiceStyle={background:"white",border:"1px solid #e9ecef",borderRadius:18,padding:isMobile?"16px 14px":"18px 18px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",cursor:"pointer",textAlign:"left",fontFamily:"Raleway,sans-serif",display:"flex",alignItems:"center",gap:12};
-  if(loading)return <LoadingSpinner message="Loading your tracker…"/>;
-  return <div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <div style={{background:"white",borderRadius:20,padding:isMobile?"18px":"22px 26px",boxShadow:"0 3px 18px rgba(0,0,0,0.08)",border:`1px solid ${C.blue}22`}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:18,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:220}}>
-          <div style={{fontSize:12,color:C.blue,fontWeight:"800",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Today</div>
-          <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?22:28,margin:"0 0 6px"}}>What do you want to work on?</h2>
-          <p style={{color:C.midGray,fontSize:14,margin:0}}>Pick one thing. You do not need to manage the whole tracker at once.</p>
-        </div>
-        <div style={{minWidth:130,textAlign:"center",background:C.lightBlue,borderRadius:18,padding:"14px 16px"}}>
-          <div style={{fontSize:34,fontWeight:"900",color:C.blue,lineHeight:1}}>{pct}%</div>
-          <div style={{fontSize:11,color:C.navy,fontWeight:"800",textTransform:"uppercase",letterSpacing:0.6}}>Complete</div>
-          <div style={{fontSize:12,color:C.midGray,marginTop:4}}>{stats.learned}/{stats.total} learned</div>
-        </div>
-      </div>
-    </div>
-
-    <div style={{background:"white",borderRadius:18,padding:isMobile?"16px":"18px 20px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:`1px solid ${C.purple}22`}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-        <div>
-          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18}}>Today's Review</div>
-          <div style={{color:C.midGray,fontSize:13,marginTop:3}}>{stats.due} card{stats.due===1?"":"s"} ready for Smart Review</div>
-        </div>
-        <button onClick={()=>onChoose("smartreview")} style={{background:C.purple,color:"white",border:"none",borderRadius:12,padding:"10px 18px",fontFamily:"Raleway,sans-serif",fontWeight:"800",cursor:"pointer"}}>Start Review</button>
-      </div>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(2,1fr)",gap:12}}>
-      <button onClick={()=>onChoose("prayers")} style={choiceStyle}><span style={{fontSize:26}}>📖</span><span><strong style={{color:C.navy,fontSize:16}}>Prayers & Readings</strong><br/><span style={{color:C.midGray,fontSize:12}}>Practice pages and audio</span></span></button>
-      <button onClick={()=>onChoose("smartreview")} style={choiceStyle}><span style={{fontSize:26}}>🧠</span><span><strong style={{color:C.navy,fontSize:16}}>Smart Review</strong><br/><span style={{color:C.midGray,fontSize:12}}>Review what needs attention</span></span></button>
-      <button onClick={()=>onChoose("assignments")} style={choiceStyle}><span style={{fontSize:26}}>📋</span><span><strong style={{color:C.navy,fontSize:16}}>Assignments</strong><br/><span style={{color:C.midGray,fontSize:12}}>{stats.assignments} open assignment{stats.assignments===1?"":"s"}</span></span></button>
-      <button onClick={()=>onChoose("services")} style={choiceStyle}><span style={{fontSize:26}}>🕍</span><span><strong style={{color:C.navy,fontSize:16}}>Shabbat Attendance</strong><br/><span style={{color:C.midGray,fontSize:12}}>Track service attendance</span></span></button>
-    </div>
-
-    <div style={{background:"white",borderRadius:18,padding:isMobile?"16px":"18px 20px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}>Section Progress</div>
-        <span style={{fontSize:12,color:C.midGray}}>Keep going.</span>
-      </div>
-      {Object.entries(stats.sections).sort((a,b)=>Number(a[0])-Number(b[0])).map(([part,data])=><div key={part} style={{marginBottom:10}}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.midGray,marginBottom:4}}><span>{DEFAULT_PART_LABELS[part]||`Part ${part}`}</span><span>{data.learned}/{data.total}</span></div>
-        <ProgressBar value={data.learned} max={data.total||1} color={C.green}/>
-      </div>)}
-      <button onClick={()=>{onViewMode?.("full");onChoose("prayers");}} style={{marginTop:10,background:"none",border:"none",color:C.blue,textDecoration:"underline",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",padding:0}}>Use full tracker view</button>
-    </div>
+  const buttonData=[
+    {id:"prayers",label:"Prayers & Readings",icon:"📖",color:C.blue},
+    {id:"smartreview",label:"Smart Review",icon:"🧠",color:C.purple},
+    {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange},
+    {id:"services",label:"Shabbat Attendance",icon:"🕍",color:C.green}
+  ];
+  const cardStyle=(color)=>({
+    minHeight:isMobile?128:170,
+    background:"white",
+    border:`2px solid ${color}33`,
+    borderRadius:22,
+    boxShadow:"0 3px 18px rgba(0,0,0,0.08)",
+    cursor:"pointer",
+    display:"flex",
+    flexDirection:"column",
+    alignItems:"center",
+    justifyContent:"center",
+    gap:12,
+    padding:isMobile?18:24,
+    fontFamily:"Raleway,sans-serif",
+    textAlign:"center"
+  });
+  return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(2,minmax(220px,1fr))",gap:isMobile?14:18,maxWidth:760,margin:"0 auto"}}>
+    {buttonData.map(b=><button key={b.id} onClick={()=>onChoose(b.id)} style={cardStyle(b.color)}>
+      <span style={{fontSize:isMobile?34:44,lineHeight:1}}>{b.icon}</span>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"900",color:C.navy,fontSize:isMobile?18:22,lineHeight:1.15}}>{b.label}</span>
+    </button>)}
   </div>;
 }
 
@@ -2020,7 +1983,7 @@ export default function App() {
   const [learners,setLearners]=useState([]);
   const [selectedLearner,setSelectedLearner]=useState(()=>{try{const r=JSON.parse(localStorage.getItem("tbi_selectedLearner")||"null");return r;}catch{return null;}});
   const [activeTab,setActiveTab]=useState(()=>localStorage.getItem("tbi_role")==="learner"?"home":"prayers");
-  const [learnerViewMode,setLearnerViewMode]=useState(()=>localStorage.getItem("tbi_learner_view_mode")||"simplified");
+  const [learnerViewMode,setLearnerViewMode]=useState("simplified");
   const [showDing,setShowDing]=useState(false);
   const [showAddLearner,setShowAddLearner]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
@@ -2167,6 +2130,7 @@ export default function App() {
   const tabs=role==="instructor"
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"practicelog",label:"🎵 Practice Log"},{id:"services",label:"🕍 Shabbat Attendance"}]
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"smartreview",label:"🧠 Review"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}];
+  const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
 
   if(!role) return <LoginScreen onLogin={handleLogin}/>;
 
@@ -2265,12 +2229,13 @@ export default function App() {
       </div>;})()}
 
       {/* Nav tabs */}
-      <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+      {showNavTabs&&<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
         {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
-      </div>
+      </div>}
+      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>setActiveTab("home")} style={{background:"none",border:"none",color:C.blue,textDecoration:"underline",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",padding:0,margin:"0 0 14px"}}>← Home</button>}
 
       {selectedLearner&&<>
-        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} learner={currentLearnerData} onChoose={setActiveTab} onViewMode={setLearnerMode}/>}
+        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome onChoose={setActiveTab}/>}
         {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
