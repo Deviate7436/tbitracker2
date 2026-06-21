@@ -2275,7 +2275,7 @@ export default function App() {
       {showNavTabs&&<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
         {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
       </div>}
-      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>setActiveTab("home")} style={{background:"none",border:"none",color:C.blue,textDecoration:"underline",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",padding:0,margin:"0 0 14px"}}>← Home</button>}
+      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>setActiveTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
 
       {selectedLearner&&<>
         {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={setActiveTab}/>}
