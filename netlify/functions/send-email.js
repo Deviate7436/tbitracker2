@@ -1,4 +1,4 @@
-exports.handler = async (event) => {
+export const handler = async (event) => {
   try {
     if (event.httpMethod === "GET") {
       return {
@@ -15,18 +15,18 @@ exports.handler = async (event) => {
     }
 
     const payload = JSON.parse(event.body || "{}");
-const { to, subject, html, body, replyTo } = payload;
-const emailHtml = html || body;
+    const { to, subject, html, body, replyTo } = payload;
+    const emailHtml = html || body;
 
     if (!to || !subject || !emailHtml) {
-  return {
-    statusCode: 400,
-    body: JSON.stringify({
-      error: "Missing to, subject, or html",
-      received: JSON.parse(event.body || "{}"),
-    }),
-  };
-}
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          error: "Missing to, subject, or html",
+          received: payload,
+        }),
+      };
+    }
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -36,8 +36,8 @@ const emailHtml = html || body;
       },
       body: JSON.stringify({
         from: "TBI Progress Tracker <assignments@tbiprogresstracker.org>",
-        to: to,
-        subject: subject,
+        to,
+        subject,
         html: emailHtml,
         reply_to: replyTo || "assignments@tbiprogresstracker.org",
       }),
