@@ -199,20 +199,30 @@ async function sendAssignmentEmail({learner, assignment}) {
   const replyTo = instructorEmails(learner.instructor);
   const emails = [learner.email1, learner.email2, learner.email3].filter(Boolean);
   if(!emails.length) return {ok:false, error:"No email addresses on file for this learner."};
+  const subtasks = assignment.subtasks||[];
+  const subtaskHtml = subtasks.length
+    ? `<ul style="margin:8px 0 0;padding-left:20px;">${subtasks.map(s=>`<li style="font-size:14px;color:#444;margin-bottom:4px;">${s.text}</li>`).join("")}</ul>`
+    : "";
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+      <h2 style="color:#1a3a5c;">New Assignment for ${learner.name}</h2>
+      <div style="background:#f8f9fa;border-radius:8px;padding:20px;margin:16px 0;">
+        <p style="font-size:16px;font-weight:600;margin:0 0 6px;">${assignment.text}</p>
+        <p style="color:#6c757d;margin:0;font-size:13px;">Date: ${assignment.date}</p>
+        ${subtaskHtml}
+      </div>
+      <a href="${window.location.origin}" style="display:inline-block;background:#1B9AD6;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open Tracker</a>
+      <p style="color:#6c757d;font-size:12px;margin-top:24px;">Temple Beth Israel Progress Tracker</p>
+    </div>`;
   try {
     const res = await fetch("/.netlify/functions/send-email", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         to: emails,
-        from: SENDER_EMAIL,
         replyTo,
         subject: `New Assignment — ${learner.name}`,
-        learnerName: learner.name,
-        assignmentText: assignment.text,
-        assignmentDate: assignment.date,
-        assignmentSubtasks: assignment.subtasks||[],
-        trackerUrl: window.location.origin,
+        html,
       }),
     });
     const data = await res.json();
