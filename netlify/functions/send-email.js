@@ -14,15 +14,19 @@ exports.handler = async (event) => {
       };
     }
 
-    const { to, subject, html, body, replyTo } = JSON.parse(event.body || "{}");
+    const payload = JSON.parse(event.body || "{}");
+const { to, subject, html, body, replyTo } = payload;
 const emailHtml = html || body;
 
     if (!to || !subject || !emailHtml) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Missing to, subject, or html" }),
-      };
-    }
+  return {
+    statusCode: 400,
+    body: JSON.stringify({
+      error: "Missing to, subject, or html",
+      received: JSON.parse(event.body || "{}"),
+    }),
+  };
+}
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
