@@ -14,9 +14,10 @@ exports.handler = async (event) => {
       };
     }
 
-    const { to, subject, html, replyTo } = JSON.parse(event.body || "{}");
+    const { to, subject, html, body, replyTo } = JSON.parse(event.body || "{}");
+const emailHtml = html || body;
 
-    if (!to || !subject || !html) {
+    if (!to || !subject || !emailHtml) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Missing to, subject, or html" }),
@@ -33,7 +34,7 @@ exports.handler = async (event) => {
         from: "TBI Progress Tracker <assignments@tbiprogresstracker.org>",
         to: to,
         subject: subject,
-        html: html,
+        html: emailHtml,
         reply_to: replyTo || "assignments@tbiprogresstracker.org",
       }),
     });
