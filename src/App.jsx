@@ -169,7 +169,7 @@ const INSTRUCTORS = {
   "Cantor David Childs": "cantorchilds@tbiport.org",
   "Josh Blumenfeld":     "jb358@yahoo.com",
 };
-const SENDER_EMAIL = "progresstracker@tbiport.org";
+const SENDER_EMAIL = "assignments@tbiprogresstracker.org";
 
 function parseInstructorNames(value) {
   return String(value || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -211,6 +211,7 @@ async function sendAssignmentEmail({learner, assignment}) {
         learnerName: learner.name,
         assignmentText: assignment.text,
         assignmentDate: assignment.date,
+        assignmentSubtasks: assignment.subtasks||[],
         trackerUrl: window.location.origin,
       }),
     });
@@ -1273,52 +1274,93 @@ function PracticeSessions({learnerId,role}) {
 }
 
 // ── Assignment Row ─────────────────────────────────────────────────────────
-function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveName, onUpdateSubtasks, onEmail, emailStatus}) {
-  const [subInput, setSubInput] = useState("");
+function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveAssignment, onUpdateSubtasks, onEmail, emailStatus}) {
+  const [editing,setEditing]=useState(false);
+  const [editDate,setEditDate]=useState(a.date||"");
+  const [editText,setEditText]=useState(a.text||"");
+  const [editSubtasks,setEditSubtasks]=useState(a.subtasks||[]);
+  const [editSubInput,setEditSubInput]=useState("");
   const subs = a.subtasks||[];
   const subDone = subs.filter(s=>s.done).length;
   const eStatus = emailStatus[a.id];
 
-  async function addSub(){
-    if(!subInput.trim()) return;
-    const updated=[...subs,{id:genId(),text:subInput.trim(),done:false}];
-    await onUpdateSubtasks(a.id,updated);
-    setSubInput("");
+  useEffect(()=>{
+    if(!editing){
+      setEditDate(a.date||"");
+      setEditText(a.text||"");
+      setEditSubtasks(a.subtasks||[]);
+      setEditSubInput("");
+    }
+  },[a.id,a.date,a.text,a.subtasks,editing]);
+
+  function addEditSubtask(){
+    if(!editSubInput.trim()) return;
+    setEditSubtasks(prev=>[...prev,{id:genId(),text:editSubInput.trim(),done:false}]);
+    setEditSubInput("");
   }
 
-  return <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-    <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+  async function saveEdit(){
+    const cleanText=editText.trim();
+    if(!cleanText) return;
+    await onSaveAssignment(a.id,{date:editDate||a.date,text:cleanText,subtasks:editSubtasks});
+    setEditing(false);
+  }
+
+  const cornerButton={background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",padding:"2px 4px"};
+
+  return <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)",position:"relative"}}>
+    <div style={{position:"absolute",top:8,right:10,display:"flex",alignItems:"center",gap:6}}>
+      {role==="instructor"&&<button onClick={()=>setEditing(v=>!v)} style={cornerButton}>{editing?"Cancel":"Edit"}</button>}
+      {role==="instructor"&&<button onClick={()=>onRemove(a.id)} style={{...cornerButton,fontSize:16,lineHeight:1,color:"#bbb"}}>✕</button>}
+    </div>
+    <div style={{display:"flex",alignItems:"flex-start",gap:12,paddingRight:role==="instructor"?70:0}}>
       <input type="checkbox" checked={a.done} onChange={()=>onToggle(a.id,a.done)} style={{width:18,height:18,cursor:"pointer",accentColor:C.blue,marginTop:2,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:subs.length>0?8:0}}>
-          {role==="instructor"
-            ?<InlineEdit value={a.text} onSave={t=>onSaveName(a.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:15,textDecoration:a.done?"line-through":"none"}}/>
-            :<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:15,textDecoration:a.done?"line-through":"none"}}>{a.text}</span>}
-          <span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>{a.date}</span>
-          {subs.length>0&&<span style={{fontSize:11,color:C.purple,border:`1px solid ${C.purple}44`,borderRadius:10,padding:"1px 8px",fontFamily:"Raleway,sans-serif"}}>{subDone}/{subs.length}</span>}
-        </div>
-        {subs.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
-          {subs.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:6,background:s.done?"#f0f2f5":"#fafbfc",border:"1px solid #e9ecef"}}>
-            <input type="checkbox" checked={s.done} onChange={async()=>{const u=subs.map(x=>x.id===s.id?{...x,done:!x.done}:x);await onUpdateSubtasks(a.id,u);}} style={{accentColor:C.blue,width:14,height:14,cursor:"pointer",flexShrink:0}}/>
-            {role==="instructor"
-              ?<InlineEdit value={s.text} onSave={async t=>{const u=subs.map(x=>x.id===s.id?{...x,text:t}:x);await onUpdateSubtasks(a.id,u);}} style={{flex:1,fontSize:13,color:s.done?C.midGray:C.navy,textDecoration:s.done?"line-through":"none",fontFamily:"Raleway,sans-serif"}}/>
-              :<span style={{flex:1,fontSize:13,color:s.done?C.midGray:C.navy,textDecoration:s.done?"line-through":"none",fontFamily:"Raleway,sans-serif"}}>{s.text}</span>}
-            {role==="instructor"&&<button onClick={async()=>{const u=subs.filter(x=>x.id!==s.id);await onUpdateSubtasks(a.id,u);}} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:13}}>✕</button>}
-          </div>)}
-        </div>}
-        {role==="instructor"&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <input value={subInput} onChange={e=>setSubInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSub()} placeholder="Add subtask…" style={{flex:1,minWidth:120,padding:"4px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
-          <Btn small color={C.blue} onClick={addSub}>+ Add</Btn>
-          {hasEmails&&<>
-            {eStatus==="sending"&&<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Sending…</span>}
-            {eStatus==="sent"&&<span style={{fontSize:12,color:C.green,fontFamily:"Raleway,sans-serif"}}>✓ Sent!</span>}
-            {eStatus?.startsWith?.("error:")&&<span style={{fontSize:12,color:C.red,fontFamily:"Raleway,sans-serif"}}>{eStatus.slice(6)}</span>}
-            {!eStatus&&<Btn small outline color={C.blue} onClick={()=>onEmail(a)}>✉ Email this assignment</Btn>}
-          </>}
-          {!hasEmails&&<span style={{fontSize:11,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No emails on file</span>}
+        {!editing&&<>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:subs.length>0?8:0}}>
+            <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:15,textDecoration:a.done?"line-through":"none"}}>{a.text}</span>
+            <span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>{a.date}</span>
+            {subs.length>0&&<span style={{fontSize:11,color:C.purple,border:`1px solid ${C.purple}44`,borderRadius:10,padding:"1px 8px",fontFamily:"Raleway,sans-serif"}}>{subDone}/{subs.length}</span>}
+          </div>
+          {subs.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
+            {subs.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:6,background:s.done?"#f0f2f5":"#fafbfc",border:"1px solid #e9ecef"}}>
+              <input type="checkbox" checked={s.done} onChange={async()=>{const u=subs.map(x=>x.id===s.id?{...x,done:!x.done}:x);await onUpdateSubtasks(a.id,u);}} style={{accentColor:C.blue,width:14,height:14,cursor:"pointer",flexShrink:0}}/>
+              <span style={{flex:1,fontSize:13,color:s.done?C.midGray:C.navy,textDecoration:s.done?"line-through":"none",fontFamily:"Raleway,sans-serif"}}>{s.text}</span>
+            </div>)}
+          </div>}
+          {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:6}}>
+            {hasEmails&&<>
+              {eStatus==="sending"&&<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Sending…</span>}
+              {eStatus==="sent"&&<span style={{fontSize:12,color:C.green,fontFamily:"Raleway,sans-serif"}}>✓ Sent!</span>}
+              {eStatus?.startsWith?.("error:")&&<span style={{fontSize:12,color:C.red,fontFamily:"Raleway,sans-serif"}}>{eStatus.slice(6)}</span>}
+              {!eStatus&&<Btn small outline color={C.blue} onClick={()=>onEmail(a)}>✉ Email assignment again</Btn>}
+            </>}
+            {!hasEmails&&<span style={{fontSize:11,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No emails on file</span>}
+          </div>}
+        </>}
+
+        {editing&&role==="instructor"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"150px 1fr",gap:8}}>
+            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+            <input value={editText} onChange={e=>setEditText(e.target.value)} placeholder="Assignment description..." style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {editSubtasks.map(s=><div key={s.id} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",alignItems:"center",gap:7,padding:"5px 8px",borderRadius:6,background:"#fafbfc",border:"1px solid #e9ecef"}}>
+              <input type="checkbox" checked={s.done} onChange={()=>setEditSubtasks(prev=>prev.map(x=>x.id===s.id?{...x,done:!x.done}:x))} style={{accentColor:C.blue,width:14,height:14}}/>
+              <input value={s.text} onChange={e=>setEditSubtasks(prev=>prev.map(x=>x.id===s.id?{...x,text:e.target.value}:x))} style={{...IS,fontSize:12,padding:"4px 8px"}}/>
+              <button onClick={()=>setEditSubtasks(prev=>prev.filter(x=>x.id!==s.id))} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",fontSize:14}}>✕</button>
+            </div>)}
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={editSubInput} onChange={e=>setEditSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addEditSubtask();}}} placeholder="Add subtask…" style={{flex:1,minWidth:130,padding:"5px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
+            <Btn small outline color={C.blue} onClick={addEditSubtask}>+ Add</Btn>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn small outline color={C.midGray} onClick={()=>setEditing(false)}>Cancel</Btn>
+            <Btn small color={C.blue} onClick={saveEdit}>Save</Btn>
+          </div>
         </div>}
       </div>
-      {role==="instructor"&&<button onClick={()=>onRemove(a.id)} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:18,marginTop:1,flexShrink:0}}>✕</button>}
     </div>
   </div>;
 }
@@ -1326,20 +1368,21 @@ function Assignments({learnerId,role,learner}) {
   const {isMobile}=useBreakpoint();
   const [assignments,setAssignments]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [newDate,setNewDate]=useState("");const [newText,setNewText]=useState("");const [confirmId,setConfirmId]=useState(null);const [saving,setSaving]=useState(false);
+  const [newSubInput,setNewSubInput]=useState("");const [newSubtasks,setNewSubtasks]=useState([]);
   const [emailStatus,setEmailStatus]=useState({});
 
   async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
 
-  async function add(){if(!newText.trim())return;setSaving(true);const a={id:genId(),learner_id:learnerId,date:newDate||new Date().toISOString().split("T")[0],text:newText.trim(),done:false,subtasks:[]};await DB.insertAssignment(a);setAssignments(prev=>[a,...prev]);setNewDate("");setNewText("");setSaving(false);}
-  async function toggle(id,done){await DB.updateAssignment(id,{done:!done});setAssignments(prev=>prev.map(a=>a.id===id?{...a,done:!done}:a));}
-  async function remove(id){await DB.deleteAssignment(id);setAssignments(prev=>prev.filter(a=>a.id!==id));}
-  async function saveName(id,text){await DB.updateAssignment(id,{text});setAssignments(prev=>prev.map(a=>a.id===id?{...a,text}:a));}
-  async function updateSubtasks(id,subtasks){await DB.updateAssignment(id,{subtasks});setAssignments(prev=>prev.map(a=>a.id===id?{...a,subtasks}:a));}
+  function addNewSubtask(){
+    if(!newSubInput.trim()) return;
+    setNewSubtasks(prev=>[...prev,{id:genId(),text:newSubInput.trim(),done:false}]);
+    setNewSubInput("");
+  }
 
-  async function emailAssignment(a){
-    if(!learner){setEmailStatus(s=>({...s,[a.id]:"error:No learner data."}));return;}
-    setEmailStatus(s=>({...s,[a.id]:"sending"}));
+  async function emailAssignment(a,{quiet=false}={}){
+    if(!learner){if(!quiet)setEmailStatus(s=>({...s,[a.id]:"error:No learner data."}));return {ok:false,error:"No learner data."};}
+    if(!quiet)setEmailStatus(s=>({...s,[a.id]:"sending"}));
     const result=await sendAssignmentEmail({learner,assignment:a});
     if(result.ok){
       setEmailStatus(s=>({...s,[a.id]:"sent"}));
@@ -1347,7 +1390,30 @@ function Assignments({learnerId,role,learner}) {
     } else {
       setEmailStatus(s=>({...s,[a.id]:`error:${result.error}`}));
     }
+    return result;
   }
+
+  async function add(){
+    if(!newText.trim())return;
+    setSaving(true);
+    const a={id:genId(),learner_id:learnerId,date:newDate||new Date().toISOString().split("T")[0],text:newText.trim(),done:false,subtasks:newSubtasks};
+    try{
+      const inserted=await DB.insertAssignment(a);
+      const saved=Array.isArray(inserted)&&inserted[0]?inserted[0]:a;
+      setAssignments(prev=>[saved,...prev]);
+      setNewDate("");setNewText("");setNewSubInput("");setNewSubtasks([]);
+      if(learner&&(learner.email1||learner.email2||learner.email3)){
+        await emailAssignment(saved,{quiet:true});
+      }
+    }catch(e){
+      setError("Failed to add assignment.");
+    }
+    setSaving(false);
+  }
+  async function toggle(id,done){await DB.updateAssignment(id,{done:!done});setAssignments(prev=>prev.map(a=>a.id===id?{...a,done:!done}:a));}
+  async function remove(id){await DB.deleteAssignment(id);setAssignments(prev=>prev.filter(a=>a.id!==id));}
+  async function saveAssignment(id,patch){await DB.updateAssignment(id,patch);setAssignments(prev=>prev.map(a=>a.id===id?{...a,...patch}:a));}
+  async function updateSubtasks(id,subtasks){await DB.updateAssignment(id,{subtasks});setAssignments(prev=>prev.map(a=>a.id===id?{...a,subtasks}:a));}
 
   const hasEmails=learner&&(learner.email1||learner.email2||learner.email3);
 
@@ -1355,14 +1421,31 @@ function Assignments({learnerId,role,learner}) {
   if(error) return <ErrorBanner message={error} onRetry={load}/>;
 
   return <div>
-    {confirmId&&<ConfirmModal message="Delete this assignment?" onConfirm={()=>{remove(confirmId);setConfirmId(null);}} onCancel={()=>setConfirmId(null)}/>}
+    {confirmId&&<ConfirmModal message="Delete this assignment?" onConfirm={()=>{remove(confirmId);setConfirmId(null);}} onCancel={()=>setConfirmId(null)}/>}    
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 16px"}}>Assignments</h3>
     {role==="instructor"&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"160px 1fr",gap:10,marginBottom:10}}>
         <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={IS}/>
         <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Assignment description..." onKeyDown={e=>e.key==="Enter"&&add()} style={IS}/>
       </div>
-      <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Adding…":"+ Add Assignment"}</Btn>
+      <div style={{background:C.cream,border:"1px solid #e9ecef",borderRadius:10,padding:12,marginBottom:12}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"800",color:C.navy,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8}}>Subtasks</div>
+        {newSubtasks.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
+          {newSubtasks.map(s=><div key={s.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",background:"white",border:"1px solid #e9ecef",borderRadius:7,padding:"6px 8px"}}>
+            <input value={s.text} onChange={e=>setNewSubtasks(prev=>prev.map(x=>x.id===s.id?{...x,text:e.target.value}:x))} style={{border:"none",outline:"none",fontSize:13,fontFamily:"Raleway,sans-serif",color:C.navy}}/>
+            <button onClick={()=>setNewSubtasks(prev=>prev.filter(x=>x.id!==s.id))} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",fontSize:14}}>✕</button>
+          </div>)}
+        </div>}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <input value={newSubInput} onChange={e=>setNewSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addNewSubtask();}}} placeholder="Add subtask before saving…" style={{...IS,flex:1,minWidth:180,fontSize:13,padding:"7px 10px"}}/>
+          <Btn small outline color={C.blue} onClick={addNewSubtask}>+ Add subtask</Btn>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Adding…":"+ Add Assignment"}</Btn>
+        {hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Email sends automatically to contacts.</span>}
+        {!hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>No contact emails on file.</span>}
+      </div>
     </div>}
     {assignments.length===0
       ?<p style={{color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No assignments yet.</p>
@@ -1371,7 +1454,7 @@ function Assignments({learnerId,role,learner}) {
           key={a.id} a={a} role={role} learner={learner}
           hasEmails={hasEmails} emailStatus={emailStatus}
           onToggle={toggle} onRemove={setConfirmId}
-          onSaveName={saveName} onUpdateSubtasks={updateSubtasks}
+          onSaveAssignment={saveAssignment} onUpdateSubtasks={updateSubtasks}
           onEmail={emailAssignment}
         />)}
       </div>}
