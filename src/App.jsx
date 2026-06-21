@@ -995,6 +995,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
 function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
+  const {isMobile}=useBreakpoint();
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [showAddPrayer,setShowAddPrayer]=useState(false);
@@ -1941,13 +1942,49 @@ function AddLearnerModal({onAdd,onClose}) {
 
 
 // ── Simplified Learner Home ────────────────────────────────────────────────
-function SimplifiedLearnerHome({onChoose}) {
+function SimplifiedLearnerHome({learnerId,onChoose}) {
   const {isMobile}=useBreakpoint();
+  const [stats,setStats]=useState({loading:true,prayerDone:0,prayerTotal:0,attendanceDone:0,attendanceTotal:10,smartDoneToday:false,assignmentsDoneThisWeek:true,openAssignmentsThisWeek:0});
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function loadHomeStats(){
+      if(!learnerId){setStats(s=>({...s,loading:false}));return;}
+      try{
+        const today=new Date();
+        const todayISO=today.toISOString().split("T")[0];
+        const start=new Date(today);start.setHours(0,0,0,0);start.setDate(today.getDate()-today.getDay());
+        const end=new Date(start);end.setDate(start.getDate()+7);
+        const [prayerRows,attRows,sessionRows,assignmentRows]=await Promise.all([
+          DB.getPrayers(learnerId),
+          DB.getAttendance(learnerId),
+          DB.getSessions(learnerId),
+          DB.getAssignments(learnerId)
+        ]);
+        const visible=(prayerRows||[]).filter(p=>!p.hidden_from_learner);
+        const prayerTotal=visible.length;
+        const prayerDone=visible.filter(p=>p.status==="Learned").length;
+        const att=(attRows||[])[0]||{};
+        const attKeys=["fri1","fri2","fri3","fri4","sat1","sat2","sat3","sat4","sat5","sat6"];
+        const attendanceDone=attKeys.filter(k=>att[k]).length;
+        const smartDoneToday=(sessionRows||[]).some(s=>s.type==="smart_review"&&s.date===todayISO);
+        const weeklyAssignments=(assignmentRows||[]).filter(a=>{
+          const d=new Date(a.date||a.created_at||todayISO);if(Number.isNaN(d.getTime()))return false;
+          return d>=start&&d<end;
+        });
+        const openAssignmentsThisWeek=weeklyAssignments.filter(a=>!a.done).length;
+        if(!cancelled)setStats({loading:false,prayerDone,prayerTotal,attendanceDone,attendanceTotal:10,smartDoneToday,assignmentsDoneThisWeek:openAssignmentsThisWeek===0,openAssignmentsThisWeek});
+      }catch(e){console.error(e);if(!cancelled)setStats(s=>({...s,loading:false}));}
+    }
+    loadHomeStats();
+    return()=>{cancelled=true;};
+  },[learnerId]);
+
   const buttonData=[
-    {id:"prayers",label:"Prayers & Readings",icon:"📖",color:C.blue},
-    {id:"smartreview",label:"Smart Review",icon:"🧠",color:C.purple},
-    {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange},
-    {id:"services",label:"Shabbat Attendance",icon:"🕍",color:C.green}
+    {id:"prayers",label:"Prayers & Readings",icon:"📖",color:C.blue,progress:{value:stats.prayerDone,max:stats.prayerTotal||1,text:`${stats.prayerDone}/${stats.prayerTotal||0}`}},
+    {id:"smartreview",label:"Smart Review",icon:"🧠",color:C.purple,badge:stats.smartDoneToday?"check":"alert"},
+    {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange,badge:stats.assignmentsDoneThisWeek?"check":"alert",badgeText:stats.openAssignmentsThisWeek>0?String(stats.openAssignmentsThisWeek):null},
+    {id:"services",label:"Shabbat Attendance",icon:"🕍",color:C.green,progress:{value:stats.attendanceDone,max:stats.attendanceTotal,text:`${stats.attendanceDone}/${stats.attendanceTotal}`}}
   ];
   const cardStyle=(color)=>({
     minHeight:isMobile?128:170,
@@ -1963,12 +2000,18 @@ function SimplifiedLearnerHome({onChoose}) {
     gap:12,
     padding:isMobile?18:24,
     fontFamily:"Raleway,sans-serif",
-    textAlign:"center"
+    textAlign:"center",
+    position:"relative"
   });
   return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(2,minmax(220px,1fr))",gap:isMobile?14:18,maxWidth:760,margin:"0 auto"}}>
     {buttonData.map(b=><button key={b.id} onClick={()=>onChoose(b.id)} style={cardStyle(b.color)}>
+      {b.badge&&<span style={{position:"absolute",right:14,top:12,minWidth:28,height:28,borderRadius:999,display:"grid",placeItems:"center",background:b.badge==="check"?C.green:C.red,color:"white",fontFamily:"Raleway,sans-serif",fontSize:14,fontWeight:"900",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}>{b.badge==="check"?"✓":(b.badgeText||"!")}</span>}
       <span style={{fontSize:isMobile?34:44,lineHeight:1}}>{b.icon}</span>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"900",color:C.navy,fontSize:isMobile?18:22,lineHeight:1.15}}>{b.label}</span>
+      {b.progress&&<div style={{width:"100%",maxWidth:220,marginTop:2}}>
+        <ProgressBar value={b.progress.value} max={b.progress.max} color={b.color}/>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,fontWeight:"800",marginTop:4}}>{b.progress.text}</div>
+      </div>}
     </button>)}
   </div>;
 }
@@ -2235,7 +2278,7 @@ export default function App() {
       {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>setActiveTab("home")} style={{background:"none",border:"none",color:C.blue,textDecoration:"underline",fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",padding:0,margin:"0 0 14px"}}>← Home</button>}
 
       {selectedLearner&&<>
-        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome onChoose={setActiveTab}/>}
+        {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={setActiveTab}/>}
         {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
