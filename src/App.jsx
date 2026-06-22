@@ -166,8 +166,8 @@ const C = {
 const INSTRUCTOR_PASSWORD = "tbi";
 
 const INSTRUCTORS = {
-  "Cantor David Childs": "cantorchilds@tbiport.org",
-  "Josh Blumenfeld":     "jb358@yahoo.com",
+  "Cantor David Childs": "Cantor David Childs <cantorchilds@tbiport.org>",
+  "Josh Blumenfeld":     "Josh Blumenfeld <jb358@yahoo.com>",
 };
 const SENDER_EMAIL = "assignments@tbiprogresstracker.org";
 
@@ -784,11 +784,9 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
     await onLinkUpdate(prayer.id,{last_reviewed:today,instructor_reviews:updated});
     setSaving(false);
   }
-  const reviewTextStyle={fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"};
-  return <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",background:"#fafbfc",border:"1px solid #e9ecef",borderRadius:10,padding:"4px 8px"}}>
-    <span style={reviewTextStyle}>Last Reviewed</span>
-    <span style={reviewTextStyle}>{prettyDate(last)}</span>
-    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1}}>{saving?"Logging…":"Log Today"}</button>
+  return <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap"}}>
+    {last&&<span style={{fontSize:11,color:C.green,fontFamily:"Raleway,sans-serif"}}>{prettyDate(last)}</span>}
+    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1,flexShrink:0}}>{saving?"Logging…":"Log Today"}</button>
   </div>;
 }
 
@@ -944,9 +942,9 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
         <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?13:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{prayer.name}</span>
         {prayer.page?<span style={{color:C.midGray,fontSize:11}}>p.{prayer.page}</span>:null}
-        <span style={{fontSize:10,color:C.midGray,border:"1px solid #dee2e6",borderRadius:10,padding:"1px 7px",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Hidden</span>
+        <span style={{fontSize:10,color:C.midGray,border:"1px solid #dee2e6",borderRadius:10,padding:"1px 7px",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Collapsed</span>
       </div>
-      <button onClick={()=>onHideToggle(prayer.id,false)} style={{position:"absolute",top:"50%",left:10,transform:"translateY(-50%)",background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",flexShrink:0}}>Unhide</button>
+      <button onClick={()=>onHideToggle(prayer.id,false)} style={{position:"absolute",top:"50%",left:10,transform:"translateY(-50%)",background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",flexShrink:0}}>Expand</button>
     </div>
   </>;
 
@@ -958,19 +956,19 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
-      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Hide</button>}
+      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
+        <LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>
         <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
         {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
       </div>}
       <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-            {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:isMobile?14:15}}>{prayer.name}</span>}
+            {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?15:17}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?15:17}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
             {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
-            {role==="instructor"&&<div style={{display:"flex",alignItems:"center",gap:5,background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}><span style={{fontSize:11,color:C.navy,fontWeight:"800",fontFamily:"Raleway,sans-serif"}}>Target</span><input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"2px 4px",borderRadius:6,border:"1px solid #dee2e6",fontSize:11,fontFamily:"Raleway,sans-serif"}}/></div>}
-            {role==="instructor"&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>} 
+
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             {hasPdf
@@ -998,6 +996,11 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
         </div>
       </div>}
       {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#fbf8ff"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>Target Date</span>
+          <input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
+          {prayer.target_date&&<button onClick={()=>onLinkUpdate(prayer.id,{target_date:null})} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12}}>✕</button>}
+        </div>
         <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} onBlur={()=>flushNotes(notesDraftRef.current)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
       </div>}
     </div>
@@ -1324,7 +1327,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
       {role==="instructor"&&<button onClick={()=>onRemove(a.id)} style={{...cornerButton,fontSize:16,lineHeight:1,color:"#bbb"}}>✕</button>}
     </div>
     <div style={{display:"flex",alignItems:"flex-start",gap:12,paddingRight:role==="instructor"?70:0}}>
-      <input type="checkbox" checked={a.done} onChange={()=>onToggle(a.id,a.done)} style={{width:18,height:18,cursor:"pointer",accentColor:C.blue,marginTop:2,flexShrink:0}}/>
+      {(()=>{const subs=a.subtasks||[];const allSubsDone=subs.length===0||subs.every(s=>s.done);return <input type="checkbox" checked={a.done} onChange={()=>allSubsDone&&onToggle(a.id,a.done)} disabled={!allSubsDone} title={!allSubsDone?"Complete all subtasks first":""} style={{width:18,height:18,cursor:allSubsDone?"pointer":"not-allowed",accentColor:C.blue,marginTop:2,flexShrink:0,opacity:allSubsDone?1:0.35}}/>;})()}
       <div style={{flex:1,minWidth:0}}>
         {!editing&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:subs.length>0?8:0}}>
@@ -1596,22 +1599,30 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   const [showCountdown,setShowCountdown]=useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_showCountdown")||"true");}catch{return true;}});
   useEffect(()=>{try{localStorage.setItem("tbi_showCountdown",JSON.stringify(showCountdown));}catch{}},[showCountdown]);
   const daysUntil=learner.date_of_service?Math.ceil((new Date(learner.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
+  function countdownText(days){
+    if(days<=0) return null;
+    if(days>90){const m=Math.floor(days/30);return `${m} month${m!==1?"s":""}`;}
+    if(days>30){const w=Math.floor(days/7);return `${w} week${w!==1?"s":""}`;}
+    return `${days} day${days!==1?"s":""}`;
+  }
+  const cdText=daysUntil!==null?countdownText(daysUntil):null;
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14}}>
-      <div style={{minWidth:220,flex:"1 1 320px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+      <div style={{flex:1,minWidth:0}}>
         <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,marginBottom:4}}>{learner.name}</div>
         {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?16:18,fontWeight:"700",fontFamily:"Raleway,sans-serif",marginBottom:10}}>{learner.hebrew_name}</div>}
+        <div style={{display:"flex",gap:isMobile?18:36,flexWrap:"wrap",marginTop:4}}>
+          {learner.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
+          {learner.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
+        </div>
       </div>
-      {daysUntil!==null&&daysUntil>0&&<div style={{display:"flex",flexDirection:"column",alignItems:isMobile?"flex-start":"flex-end",gap:8,flexShrink:0}}>
-        <button onClick={()=>setShowCountdown(s=>!s)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 10px",fontSize:11,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>{showCountdown?"Hide countdown":"Show countdown"}</button>
-        {showCountdown&&<div style={{background:C.lightBlue,borderRadius:10,padding:"10px 16px",display:"inline-block",textAlign:isMobile?"left":"right"}}>
-          <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.blue,fontSize:14}}>📅 {daysUntil} day{daysUntil!==1?"s":""} until your service</span>
+      {cdText&&<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0}}>
+        <button onClick={()=>setShowCountdown(s=>!s)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"3px 8px",fontSize:10,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>{showCountdown?"Hide":"Show countdown"}</button>
+        {showCountdown&&<div style={{background:C.lightBlue,borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
+          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:22,lineHeight:1}}>{cdText}</div>
+          <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.blue,opacity:0.8,marginTop:2}}>until your service</div>
         </div>}
       </div>}
-    </div>
-    <div style={{display:"flex",gap:isMobile?18:36,flexWrap:"wrap",marginTop:10}}>
-      {learner.date_of_service&&<div style={{minWidth:220}}><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
-      {learner.parashah&&<div style={{minWidth:180}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
     </div>
   </div>;
 }
@@ -2076,7 +2087,7 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
   const buttonData=[
     {id:"prayers",label:"Prayers & Readings",icon:"📖",color:C.blue,progress:{value:stats.prayerDone,max:stats.prayerTotal||1,text:`${stats.prayerDone}/${stats.prayerTotal||0}`}},
     {id:"smartreview",label:"Smart Review",icon:"🧠",color:C.purple,badge:stats.smartDoneToday?"check":"alert"},
-    {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange,badge:stats.assignmentsDoneThisWeek?"check":"alert",badgeText:stats.openAssignmentsThisWeek>0?String(stats.openAssignmentsThisWeek):null},
+    {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange,badge:stats.openAssignmentsThisWeek>0?"count":null,badgeText:stats.openAssignmentsThisWeek>0?String(stats.openAssignmentsThisWeek):null},
     {id:"services",label:"Shabbat Attendance",icon:"🕍",color:C.green,progress:{value:stats.attendanceDone,max:stats.attendanceTotal,text:`${stats.attendanceDone}/${stats.attendanceTotal}`}}
   ];
   const cardStyle=(color)=>({
@@ -2098,7 +2109,7 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
   });
   return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(2,minmax(220px,1fr))",gap:isMobile?14:18,maxWidth:760,margin:"0 auto"}}>
     {buttonData.map(b=><button key={b.id} onClick={()=>onChoose(b.id)} style={cardStyle(b.color)}>
-      {b.badge&&<span style={{position:"absolute",right:14,top:12,minWidth:28,height:28,borderRadius:999,display:"grid",placeItems:"center",background:b.badge==="check"?C.green:C.red,color:"white",fontFamily:"Raleway,sans-serif",fontSize:14,fontWeight:"900",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}>{b.badge==="check"?"✓":(b.badgeText||"!")}</span>}
+      {b.badge&&<span style={{position:"absolute",right:14,top:12,minWidth:28,height:28,borderRadius:999,display:"grid",placeItems:"center",background:b.badge==="check"?C.green:C.red,color:"white",fontFamily:"Raleway,sans-serif",fontSize:b.badge==="count"?15:14,fontWeight:"900",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}>{b.badge==="check"?"✓":b.badgeText}</span>}
       <span style={{fontSize:isMobile?34:44,lineHeight:1}}>{b.icon}</span>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"900",color:C.navy,fontSize:isMobile?18:22,lineHeight:1.15}}>{b.label}</span>
       {b.progress&&<div style={{width:"100%",maxWidth:220,marginTop:2}}>
@@ -2398,6 +2409,13 @@ export default function App() {
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
         {activeTab==="services"   &&<ServiceAttendance learnerId={selectedLearner} role={role}/>}
       </>}
+      {role==="learner"&&currentLearnerData?.instructor&&(()=>{
+        const emails=instructorEmails(currentLearnerData.instructor);
+        const mailto=`mailto:${emails}?subject=Question from ${currentLearnerData.name}`;
+        return <div style={{textAlign:"center",padding:"24px 0 8px"}}>
+          <a href={mailto} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
+        </div>;
+      })()}
       {isMobile&&<div style={{height:32}}/>}
     </div>
 
