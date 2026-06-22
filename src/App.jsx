@@ -2072,11 +2072,7 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
         const attKeys=["fri1","fri2","fri3","fri4","sat1","sat2","sat3","sat4","sat5","sat6"];
         const attendanceDone=attKeys.filter(k=>att[k]).length;
         const smartDoneToday=(sessionRows||[]).some(s=>s.type==="smart_review"&&s.date===todayISO);
-        const weeklyAssignments=(assignmentRows||[]).filter(a=>{
-          const d=new Date(a.date||a.created_at||todayISO);if(Number.isNaN(d.getTime()))return false;
-          return d>=start&&d<end;
-        });
-        const openAssignmentsThisWeek=weeklyAssignments.filter(a=>!a.done).length;
+        const openAssignmentsThisWeek=(assignmentRows||[]).filter(a=>!a.done).length;
         if(!cancelled)setStats({loading:false,prayerDone,prayerTotal,attendanceDone,attendanceTotal:10,smartDoneToday,assignmentsDoneThisWeek:openAssignmentsThisWeek===0,openAssignmentsThisWeek});
       }catch(e){console.error(e);if(!cancelled)setStats(s=>({...s,loading:false}));}
     }
@@ -2409,13 +2405,9 @@ export default function App() {
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
         {activeTab==="services"   &&<ServiceAttendance learnerId={selectedLearner} role={role}/>}
       </>}
-      {role==="learner"&&currentLearnerData?.instructor&&(()=>{
-        const emails=instructorEmails(currentLearnerData.instructor);
-        const mailto=`mailto:${emails}?subject=Question from ${currentLearnerData.name}`;
-        return <div style={{textAlign:"center",padding:"24px 0 8px"}}>
-          <a href={mailto} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
-        </div>;
-      })()}
+      {role==="learner"&&currentLearnerData?.instructor&&<div style={{textAlign:"center",padding:"24px 0 8px"}}>
+        <a href={`mailto:${instructorEmails(currentLearnerData.instructor)}?subject=Question from ${currentLearnerData.name}`} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
+      </div>}
       {isMobile&&<div style={{height:32}}/>}
     </div>
 
