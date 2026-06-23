@@ -901,15 +901,14 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false}) {
+function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false}) {
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
   const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
-  const [notesDraft,setNotesDraft]=useState(prayer.notes||"");
-  const notesDraftRef=useRef(prayer.notes||"");
-  const notesTimer=useRef(null);
-  const lastSavedNotes=useRef(prayer.notes||"");
+  const [chatInput,setChatInput]=useState("");
+  const [chatSending,setChatSending]=useState(false);
+  const chatEndRef=useRef(null);
   const hidden=!!prayer.hidden_from_learner;
 
   const effectivePdf=prayer.pdf||(defaultMedia?.pdf)||null;
@@ -920,27 +919,18 @@ function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideTo
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
   useEffect(()=>{
-    const incoming=prayer.notes||"";
-    setNotesDraft(incoming);
-    notesDraftRef.current=incoming;
-    lastSavedNotes.current=incoming;
-    if(notesTimer.current){clearTimeout(notesTimer.current);notesTimer.current=null;}
-  },[prayer.id]);
-  const flushNotes=useCallback(async (value)=>{
-    const next=value||"";
-    if(notesTimer.current){clearTimeout(notesTimer.current);notesTimer.current=null;}
-    if(next===lastSavedNotes.current)return;
-    lastSavedNotes.current=next;
-    try{await onLinkUpdate(prayer.id,{notes:next});}
-    catch(e){console.error(e);alert("Could not save notes. Make sure the notes column has been added in Supabase.");}
-  },[onLinkUpdate,prayer.id]);
-  function updateNotes(value){
-    notesDraftRef.current=value;
-    setNotesDraft(value);
-    if(notesTimer.current)clearTimeout(notesTimer.current);
-    notesTimer.current=setTimeout(()=>flushNotes(value),800);
+    if(notesOpen&&chatEndRef.current) chatEndRef.current.scrollIntoView({behavior:"smooth"});
+  },[notesOpen,(prayer.notes_chat||[]).length]);
+
+  async function sendChatMessage(){
+    if(!chatInput.trim()||!instructorUser)return;
+    setChatSending(true);
+    const msg={id:genId(),author:instructorUser.name,role:instructorUser.role||"lead",text:chatInput.trim(),ts:new Date().toISOString()};
+    const updated=[...(prayer.notes_chat||[]),msg];
+    await onLinkUpdate(prayer.id,{notes_chat:updated});
+    setChatInput("");
+    setChatSending(false);
   }
-  useEffect(()=>()=>{if(notesTimer.current)clearTimeout(notesTimer.current);},[prayer.id]);
 
   if(hidden&&role==="instructor") return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
@@ -1006,20 +996,34 @@ function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideTo
           <div><div style={LS}>Audio Override</div><AudioUploadControl label="Learner Audio" value={prayer.audio} name={prayer.audio_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{audio:url,audio_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{audio:null,audio_name:null})}/></div>
         </div>
       </div>}
-      {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#fbf8ff"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+      {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",background:"#fbf8ff"}}>
+        {isLead&&<div style={{padding:"12px 18px 0",display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>Target Date</span>
           <input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
           {prayer.target_date&&<button onClick={()=>onLinkUpdate(prayer.id,{target_date:null})} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12}}>✕</button>}
+        </div>}
+        <div style={{maxHeight:220,overflowY:"auto",padding:"10px 18px",display:"flex",flexDirection:"column",gap:8}}>
+          {(prayer.notes_chat||[]).length===0&&<p style={{color:C.midGray,fontSize:12,fontStyle:"italic",fontFamily:"Raleway,sans-serif",margin:0}}>No notes yet.</p>}
+          {(prayer.notes_chat||[]).map(msg=><div key={msg.id} style={{background:"white",borderRadius:10,padding:"8px 12px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+              <span style={{fontSize:11,fontWeight:"800",color:msg.role==="lead"?C.navy:C.purple,fontFamily:"Raleway,sans-serif"}}>{msg.author}</span>
+              <span style={{fontSize:10,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{new Date(msg.ts).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+            </div>
+            <p style={{margin:0,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",lineHeight:1.4}}>{msg.text}</p>
+          </div>)}
+          <div ref={chatEndRef}/>
         </div>
-        <textarea value={notesDraft} onChange={e=>isLead&&updateNotes(e.target.value)} onBlur={()=>isLead&&flushNotes(notesDraftRef.current)} readOnly={!isLead} placeholder={isLead?"Instructor notes…":"(read only)"} style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
+        <div style={{padding:"10px 18px 14px",display:"flex",gap:8}}>
+          <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendChatMessage()} placeholder="Add a note…" style={{flex:1,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",outline:"none"}}/>
+          <button onClick={sendChatMessage} disabled={chatSending||!chatInput.trim()} style={{background:C.purple,color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:"700",cursor:chatSending?"not-allowed":"pointer",opacity:chatSending?0.6:1,fontFamily:"Raleway,sans-serif"}}>Send</button>
+        </div>
       </div>}
     </div>
   </>;
 }
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
-function PrayerTracker({learnerId,role,isLead=true,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
+function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
   const {isMobile}=useBreakpoint();
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
@@ -1172,7 +1176,7 @@ function PrayerTracker({learnerId,role,isLead=true,onDing,mediaRefreshKey=0,lear
           {role==="learner"&&<div style={{width:isMobile?70:110,marginLeft:4}}><ProgressBar value={done} max={allPP.length||1} color={C.green}/></div>}
         </div>
         {!isCollapsed&&pp.map(p=><PrayerRow
-          key={p.id} prayer={p} role={role} isLead={isLead}
+          key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
@@ -2504,7 +2508,7 @@ export default function App() {
 
       {selectedLearner&&<>
         {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
-        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} isLead={isLead} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
