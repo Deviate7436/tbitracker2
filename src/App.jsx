@@ -1619,8 +1619,6 @@ function SmartReview({learnerId}) {
 }
 // ── Learner Header Card ────────────────────────────────────────────────────
 function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
-  const [showCountdown,setShowCountdown]=useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_showCountdown")||"true");}catch{return true;}});
-  useEffect(()=>{try{localStorage.setItem("tbi_showCountdown",JSON.stringify(showCountdown));}catch{}},[showCountdown]);
   const daysUntil=learner.date_of_service?Math.ceil((new Date(learner.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
   function countdownText(days){
     if(days<=0) return null;
@@ -1631,20 +1629,17 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   const cdText=daysUntil!==null?countdownText(daysUntil):null;
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-      <div style={{flex:1,minWidth:0,textAlign:"center"}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?26:32,marginBottom:2}}>{learner.name}</div>
-        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?14:16,fontWeight:"600",fontFamily:"Raleway,sans-serif",marginBottom:12}}>{learner.hebrew_name}</div>}
-        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8,paddingLeft:"15%"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?22:26,marginBottom:2}}>{learner.name}</div>
+        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?14:16,fontWeight:"600",fontFamily:"Raleway,sans-serif",marginBottom:10}}>{learner.hebrew_name}</div>}
+        <div style={{display:"flex",gap:isMobile?16:28,flexWrap:"wrap",marginTop:6}}>
           {learner.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
           {learner.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
         </div>
       </div>
-      {cdText&&<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0}}>
-        <button onClick={()=>setShowCountdown(s=>!s)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"3px 8px",fontSize:10,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>{showCountdown?"Hide":"Show countdown"}</button>
-        {showCountdown&&<div style={{background:C.lightBlue,borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
-          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:22,lineHeight:1}}>{cdText}</div>
-          <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.blue,opacity:0.8,marginTop:2}}>until your service</div>
-        </div>}
+      {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"8px 14px",textAlign:"center",flexShrink:0}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:22,lineHeight:1}}>{cdText}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.blue,opacity:0.8,marginTop:2}}>until your service</div>
       </div>}
     </div>
   </div>;
