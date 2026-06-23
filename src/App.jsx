@@ -942,7 +942,6 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
         <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?13:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{prayer.name}</span>
         {prayer.page?<span style={{color:C.midGray,fontSize:11}}>p.{prayer.page}</span>:null}
-        <span style={{fontSize:10,color:C.midGray,border:"1px solid #dee2e6",borderRadius:10,padding:"1px 7px",fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Collapsed</span>
       </div>
       <button onClick={()=>onHideToggle(prayer.id,false)} style={{position:"absolute",top:"50%",left:10,transform:"translateY(-50%)",background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",flexShrink:0}}>Expand</button>
     </div>
@@ -958,9 +957,11 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Collapse</button>}
-      {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
-        <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
-        {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
+      {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,zIndex:2}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
+          {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
+        </div>
         <LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>
       </div>}
       <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?18:22):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
@@ -1144,12 +1145,14 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
         </label>}
       </div>
       {role==="instructor"&&<div style={{background:C.lightBlue,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"12px 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-        <Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>
       </div>}
     </div>
 
     {/* Prayers & Readings heading */}
-    <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:"0 0 16px"}}>Prayers & Readings</h3>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+      <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:0}}>Prayers & Readings</h3>
+      {role==="instructor"&&<Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>}
+    </div>
 
     {/* Sections */}
     {parts.map(part=>{
@@ -1854,7 +1857,6 @@ function LoginScreen({onLogin}) {
       {mode==="learner"?<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Welcome!</h2>
         <p style={{color:C.midGray,fontSize:14,margin:"0 0 24px",fontFamily:"Raleway,sans-serif"}}>Enter your access key to open your tracker.</p>
-        <label style={LS}>Your Access Key</label>
         <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLearnerLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleLearnerLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Open My Tracker →"}</button>
