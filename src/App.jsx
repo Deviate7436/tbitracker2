@@ -464,7 +464,7 @@ function SectionHeaderTitle({value,onSave,editable,style={}}) {
   if(editable&&editing) return <input ref={ref} value={draft} onClick={e=>e.stopPropagation()} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(value);setEditing(false);}}} style={{...style,border:`1.5px solid ${C.blue}`,borderRadius:6,padding:"2px 8px",outline:"none",fontFamily:"Raleway,sans-serif",background:"white",minWidth:120}}/>;
   return <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
     <span style={style}>{value}</span>
-    {editable&&<button onClick={e=>{e.stopPropagation();setEditing(true);}} style={{background:"transparent",border:"none",color:C.blue,fontSize:11,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",padding:0,textDecoration:"underline"}}>edit</button>}
+
   </span>;
 }
 
@@ -894,7 +894,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false}) {
+function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false}) {
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
@@ -956,8 +956,10 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
-      {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Collapse</button>}
+      {role==="instructor"&&isLead&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"600",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,zIndex:2}}>
+        {!isLead&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>}
+        {isLead&&<>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
           {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
@@ -976,7 +978,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
             {hasPdf
               ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
-            {role==="instructor"&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
+            {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
             {hasAudio&&!hasPdf&&!simplified
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
@@ -987,7 +989,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
           {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>}
         </div>
       </div>
-      {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
+      {role==="instructor"&&isLead&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
         <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
@@ -1009,7 +1011,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 }
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
-function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
+function PrayerTracker({learnerId,role,isLead=true,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
   const {isMobile}=useBreakpoint();
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
@@ -1135,19 +1137,10 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
   if(error) return <ErrorBanner message={error} onRetry={load}/>;
 
   return <div>
-    {/* Instructor / learner controls */}
-    <div style={{display:"grid",gridTemplateColumns:role==="instructor"?"minmax(220px,1fr) auto":"1fr",gap:12,alignItems:"center",marginBottom:20}}>
-      <div style={{background:"white",borderRadius:16,padding:"14px 18px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-        
-      </div>
-      {role==="instructor"&&<div style={{background:C.lightBlue,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"12px 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-      </div>}
-    </div>
-
     {/* Prayers & Readings heading */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
       <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18,margin:0}}>Prayers & Readings</h3>
-      {role==="instructor"&&<Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>}
+      {role==="instructor"&&isLead&&<Btn onClick={()=>setShowAddPrayer(true)} color={C.blue} small>+ Add Prayer / Reading</Btn>}
     </div>
 
     {/* Sections */}
@@ -1159,20 +1152,19 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
       const isCollapsed=!!collapsedParts[part];
       return <div key={part} style={{marginBottom:28}}>
         {/* Section header with collapse toggle */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:isCollapsed?0:12,cursor:"pointer"}} onClick={()=>toggleCollapse(part)}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{color:C.midGray,fontSize:14,userSelect:"none"}}>{isCollapsed?"▶":"▼"}</span>
-            <SectionHeaderTitle
-              value={label}
-              editable={role==="instructor"}
-              onSave={t=>renameSection(part,t)}
-              style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}
-            />
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{done}/{allPP.length}</span>{role==="learner"&&<div style={{width:isMobile?70:110}}><ProgressBar value={done} max={allPP.length||1} color={C.green}/></div>}</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:isCollapsed?0:12,cursor:"pointer"}} onClick={()=>toggleCollapse(part)}>
+          <span style={{color:C.midGray,fontSize:14,userSelect:"none"}}>{isCollapsed?"▶":"▼"}</span>
+          <SectionHeaderTitle
+            value={label}
+            editable={role==="instructor"}
+            onSave={t=>renameSection(part,t)}
+            style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:16}}
+          />
+          <span style={{fontSize:13,color:C.midGray,fontFamily:"Raleway,sans-serif",marginLeft:4}}>{done}/{allPP.length}</span>
+          {role==="learner"&&<div style={{width:isMobile?70:110,marginLeft:4}}><ProgressBar value={done} max={allPP.length||1} color={C.green}/></div>}
         </div>
         {!isCollapsed&&pp.map(p=><PrayerRow
-          key={p.id} prayer={p} role={role}
+          key={p.id} prayer={p} role={role} isLead={isLead}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
@@ -1203,7 +1195,7 @@ function AddPrayerModal({partCount,onAdd,onClose}) {
 }
 
 // ── Services ───────────────────────────────────────────────────────────────
-function ServiceAttendance({learnerId,role}) {
+function ServiceAttendance({learnerId,role,isLead=true}) {
   const {isMobile}=useBreakpoint();
   const [att,setAtt]=useState({});const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const rows=[["fri1","Friday #1"],["fri2","Friday #2"],["fri3","Friday #3"],["fri4","Friday #4"],["sat1","Saturday #1"],["sat2","Saturday #2"],["sat3","Saturday #3"],["sat4","Saturday #4"],["sat5","Saturday #5"],["sat6","Saturday #6"]];
@@ -1246,7 +1238,7 @@ function ServiceAttendance({learnerId,role}) {
       {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
         <input value={att[`${key}_where`]||""} onChange={e=>updateWhere(key,e.target.value)} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy}}/>
-        <input type="date" value={att[key]||""} onChange={e=>update(key,e.target.value)} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:"white",flexShrink:0}}/>
+        <input type="date" value={att[key]||""} onChange={e=>(role==="learner"||isLead)&&update(key,e.target.value)} readOnly={role==="instructor"&&!isLead} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white",flexShrink:0}}/>
       </div>)}
     </div>
     <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
@@ -1399,7 +1391,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
     </div>
   </div>;
 }
-function Assignments({learnerId,role,learner}) {
+function Assignments({learnerId,role,learner,isLead=true}) {
   const {isMobile}=useBreakpoint();
   const [assignments,setAssignments]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [newDate,setNewDate]=useState("");const [newText,setNewText]=useState("");const [confirmId,setConfirmId]=useState(null);const [saving,setSaving]=useState(false);
@@ -1458,7 +1450,7 @@ function Assignments({learnerId,role,learner}) {
   return <div>
     {confirmId&&<ConfirmModal message="Delete this assignment?" onConfirm={()=>{remove(confirmId);setConfirmId(null);}} onCancel={()=>setConfirmId(null)}/>}    
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 16px"}}>Assignments</h3>
-    {role==="instructor"&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+    {role==="instructor"&&isLead&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"160px 1fr",gap:10,marginBottom:10}}>
         <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={IS}/>
         <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Write assignment here" onKeyDown={e=>e.key==="Enter"&&add()} style={IS}/>
@@ -1793,13 +1785,13 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
 }
 
 // ── Instructor Learner Card ────────────────────────────────────────────────
-function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave}) {
+function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave,isLead=true}) {
   const [tier2Open,setTier2Open]=useState(false);
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
     <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
       <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
       <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
-      <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>
+      {isLead&&<button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>}
     </div>
     {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
@@ -1857,7 +1849,15 @@ function LoginScreen({onLogin}) {
     }catch(e){setError("Connection error. Please try again.");}
     setLoading(false);
   }
-  function handleInstructorLogin(){setError("");if(instrPassword===INSTRUCTOR_PASSWORD)onLogin("instructor",null);else setError("Incorrect password.");}
+  async function handleInstructorLogin(){
+    setError("");setLoading(true);
+    try{
+      const instr=await DB.getInstructor(instrPassword.trim());
+      if(instr){onLogin("instructor",null,instr);}
+      else setError("Access key not found.");
+    }catch(e){setError("Connection error. Please try again.");}
+    setLoading(false);
+  }
 
   return <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.navy} 0%,#0A6FA8 100%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:isMobile?16:24,position:"relative"}}>
     <div style={{textAlign:"center",marginBottom:isMobile?28:36}}>
@@ -2183,6 +2183,7 @@ export default function App() {
 
   // Persist login across refresh
   const [role,setRole]=useState(()=>localStorage.getItem("tbi_role")||null);
+  const [instructorUser,setInstructorUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_instructor")||"null");}catch{return null;}});
   const [learnerId,setLearnerId]=useState(()=>localStorage.getItem("tbi_learner_id")||null);
   const [learners,setLearners]=useState([]);
   const [selectedLearner,setSelectedLearner]=useState(()=>{try{const r=JSON.parse(localStorage.getItem("tbi_selectedLearner")||"null");return r;}catch{return null;}});
@@ -2221,6 +2222,7 @@ export default function App() {
   const [archiveConfirm,setArchiveConfirm]=useState(null);
   const [currentLearnerData,setCurrentLearnerData]=useState(null); // for learner header
 
+  function persistInstructor(u){setInstructorUser(u);if(u)localStorage.setItem("tbi_instructor",JSON.stringify(u));else localStorage.removeItem("tbi_instructor");}
   function persistLogin(r,lid){
     if(r) localStorage.setItem("tbi_role",r); else localStorage.removeItem("tbi_role");
     if(lid) localStorage.setItem("tbi_learner_id",lid); else localStorage.removeItem("tbi_learner_id");
@@ -2231,7 +2233,21 @@ export default function App() {
     try{localStorage.setItem("tbi_learner_view_mode",mode);}catch{}
   }
 
+  async function autoArchivePastLearners(){
+    try{
+      const today=new Date();today.setHours(0,0,0,0);
+      const rows=await DB.getLearners();
+      const toArchive=(rows||[]).filter(l=>{
+        if(l.archived||!l.date_of_service)return false;
+        const svc=new Date(l.date_of_service+"T12:00:00");
+        return (today-svc)/(1000*60*60*24)>=2;
+      });
+      for(const l of toArchive) await DB.upsertLearner({...l,archived:true});
+    }catch(e){console.error("Auto-archive failed:",e);}
+  }
+
   async function loadLearners(){
+    await autoArchivePastLearners();
     setLoadingLearners(true);
     try{
       const r=await DB.getActiveLearners();
@@ -2290,7 +2306,7 @@ export default function App() {
   },[role,learnerId,selectedLearner]);
 
   function signOut(){
-    setRole(null);setLearnerId(null);setSelectedLearner(null);
+    setRole(null);setLearnerId(null);setSelectedLearner(null);persistInstructor(null);
     setLearners([]);setCurrentLearnerData(null);setShowSettings(false);goTab("prayers");
     persistLogin(null,null);
   }
@@ -2356,6 +2372,7 @@ export default function App() {
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"smartreview",label:"🧠 Review"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}];
   const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
 
+  const isLead=!instructorUser||instructorUser.role==="lead";
   if(!role) return <LoginScreen onLogin={handleLogin}/>;
 
   return <div style={{minHeight:"100vh",background:C.lightGray,fontFamily:"Raleway,sans-serif"}} onClick={()=>setLearnerDropdownMenu(null)}>
@@ -2418,7 +2435,7 @@ export default function App() {
             <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:C.midGray}}>▾</span>
           </div>
           {/* Learner action dropdown */}
-          {selectedLearner&&<div style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
+          {selectedLearner&&isLead&&<div style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setLearnerDropdownMenu(learnerDropdownOpen===selectedLearner?null:selectedLearner)}
               style={{padding:"10px 14px",borderRadius:10,border:"1px solid #dee2e6",background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"600",fontSize:13,cursor:"pointer"}}>⋯</button>
             {learnerDropdownOpen===selectedLearner&&<div style={{position:"absolute",right:0,top:"calc(100% + 4px)",background:"white",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",border:"1px solid #e9ecef",minWidth:180,zIndex:200,overflow:"hidden"}}>
@@ -2428,7 +2445,7 @@ export default function App() {
                 style={{display:"block",width:"100%",padding:"12px 16px",background:"none",border:"none",textAlign:"left",fontFamily:"Raleway,sans-serif",fontSize:14,color:C.red,cursor:"pointer"}}>🗑 Delete Tracker</button>
             </div>}
           </div>}
-          <button onClick={()=>setShowAddLearner(true)} style={{padding:"10px 16px",borderRadius:10,border:`2px dashed ${C.blue}`,background:"transparent",color:C.blue,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",whiteSpace:"nowrap"}}>+ Add Learner</button>
+          {isLead&&<button onClick={()=>setShowAddLearner(true)} style={{padding:"10px 16px",borderRadius:10,border:`2px dashed ${C.blue}`,background:"transparent",color:C.blue,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",whiteSpace:"nowrap"}}>+ Add Learner</button>}
         </>}
       </div>}
 
@@ -2436,7 +2453,7 @@ export default function App() {
       {selectedLearner&&role==="instructor"&&(()=>{
         const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
         if(!l)return null;
-        return <InstructorLearnerCard
+        return <InstructorLearnerCard isLead={isLead}
           l={l} isMobile={isMobile}
           formatLastSignedIn={formatLastSignedIn}
           formatServiceDate={formatServiceDate}
@@ -2464,11 +2481,11 @@ export default function App() {
 
       {selectedLearner&&<>
         {activeTab==="home"&&role==="learner"&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
-        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
-        {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner} role={role} isLead={isLead} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
+        {activeTab==="assignments"&&<Assignments    learnerId={selectedLearner} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="practicelog"&&<PracticeSessions learnerId={selectedLearner} role={role}/>}
         {activeTab==="smartreview"&&<SmartReview    learnerId={selectedLearner}/>}
-        {activeTab==="services"   &&<ServiceAttendance learnerId={selectedLearner} role={role}/>}
+        {activeTab==="services"   &&<ServiceAttendance learnerId={selectedLearner} role={role} isLead={isLead}/>}
       </>}
       {role==="learner"&&currentLearnerData?.instructor&&<div style={{textAlign:"center",padding:"24px 0 8px"}}>
         <a href={`mailto:${instructorEmails(currentLearnerData.instructor)}?subject=Question from ${currentLearnerData.name}`} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
