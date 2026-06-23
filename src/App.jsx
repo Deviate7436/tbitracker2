@@ -1021,7 +1021,7 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
   useEffect(()=>{
     if(role==="instructor") try{localStorage.setItem(`tbi_collapsed_${learnerId}`,JSON.stringify(collapsedParts));}catch{}
   },[collapsedParts,role,learnerId]);
-  const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"false");}catch{return false;}});
+  const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"true");}catch{return true;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
   const [currentLearner,setCurrentLearner]=useState(null);
 
@@ -1139,10 +1139,6 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
     <div style={{display:"grid",gridTemplateColumns:role==="instructor"?"minmax(220px,1fr) auto":"1fr",gap:12,alignItems:"center",marginBottom:20}}>
       <div style={{background:"white",borderRadius:16,padding:"14px 18px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         
-        {role==="instructor"&&<label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",userSelect:"none"}}>
-          <input type="checkbox" checked={hideNotStarted} onChange={e=>setHideNotStarted(e.target.checked)} style={{accentColor:C.navy,width:15,height:15}}/>
-          <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner</span>
-        </label>}
       </div>
       {role==="instructor"&&<div style={{background:C.lightBlue,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"12px 14px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
       </div>}
@@ -1819,8 +1815,25 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
         </div>
       </div>
       <LearnerInfoEditor l={l} isMobile={isMobile} onSave={onSave}/>
+      <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
+        <HideNotStartedToggle learnerId={l.id}/>
+      </div>
     </div>}
   </div>;
+}
+
+// ── Hide Not Started Toggle ────────────────────────────────────────────────
+function HideNotStartedToggle({learnerId}) {
+  const [checked,setChecked]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"true");}catch{return true;}});
+  function toggle(e){
+    const v=e.target.checked;
+    setChecked(v);
+    try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(v));}catch{}
+  }
+  return <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+    <input type="checkbox" checked={checked} onChange={toggle} style={{accentColor:C.navy,width:15,height:15}}/>
+    <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner view</span>
+  </label>;
 }
 
 // ── Login ──────────────────────────────────────────────────────────────────
@@ -1864,9 +1877,7 @@ function LoginScreen({onLogin}) {
         
       </>:<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
-        <p style={{color:C.midGray,fontSize:14,margin:"0 0 24px",fontFamily:"Raleway,sans-serif"}}>Enter your instructor password.</p>
-        <label style={LS}>Password</label>
-        <input ref={instrPasswordRef} type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
+                <input ref={instrPasswordRef} type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleInstructorLogin} style={{width:"100%",marginTop:20,padding:"14px",background:C.navy,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer"}}>Sign In →</button>
         <button onClick={()=>{setMode("learner");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Learner Login</button>
