@@ -2381,7 +2381,7 @@ export default function App() {
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"smartreview",label:"🧠 Review"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}];
   const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
 
-  const isLead=!instructorUser||instructorUser.role==="lead";
+  const isLead=role!=="instructor"||instructorUser?.role==="lead";
   if(!role) return <LoginScreen onLogin={handleLogin}/>;
 
   return <div style={{minHeight:"100vh",background:C.lightGray,fontFamily:"Raleway,sans-serif"}} onClick={()=>setLearnerDropdownMenu(null)}>
