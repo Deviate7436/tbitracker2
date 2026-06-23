@@ -2284,12 +2284,13 @@ export default function App() {
     }catch(e){}
   }
 
-  async function handleLogin(r,lid){
+  async function handleLogin(r,lid,instrUser=null){
     setRole(r); persistLogin(r,lid);
     if(r==="learner"&&lid){
       setLearnerId(lid);setSelectedLearner(lid);setLearners([]);goTab("home");
       loadCurrentLearnerData(lid);
     } else {
+      persistInstructor(instrUser);
       setLearnerId(null);goTab("prayers");await loadLearners();
     }
   }
