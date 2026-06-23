@@ -1613,12 +1613,12 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   const cdText=daysUntil!==null?countdownText(daysUntil):null;
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,marginBottom:4}}>{learner.name}</div>
-        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?16:18,fontWeight:"700",fontFamily:"Raleway,sans-serif",marginBottom:10}}>{learner.hebrew_name}</div>}
-        <div style={{display:"flex",gap:isMobile?18:36,flexWrap:"wrap",marginTop:4}}>
-          {learner.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
-          {learner.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
+      <div style={{flex:1,minWidth:0,textAlign:"center"}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?22:26,marginBottom:2}}>{learner.name}</div>
+        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?14:16,fontWeight:"600",fontFamily:"Raleway,sans-serif",marginBottom:12}}>{learner.hebrew_name}</div>}
+        <div style={{display:"flex",gap:isMobile?18:36,flexWrap:"wrap",marginTop:4,justifyContent:"center"}}>
+          {learner.date_of_service&&<div style={{textAlign:"center"}}><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
+          {learner.parashah&&<div style={{textAlign:"center"}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
         </div>
       </div>
       {cdText&&<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0}}>
@@ -1783,7 +1783,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
     <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
       <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
       <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
-      <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less":"▼ More"}</button>
+      <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>
     </div>
     {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
@@ -2142,7 +2142,6 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"900",color:C.navy,fontSize:isMobile?18:22,lineHeight:1.15}}>{b.label}</span>
       {b.progress&&<div style={{width:"100%",maxWidth:220,marginTop:2}}>
         <ProgressBar value={b.progress.value} max={b.progress.max} color={b.color}/>
-        <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,fontWeight:"800",marginTop:4}}>{b.progress.text}</div>
       </div>}
     </button>)}
   </div>;
