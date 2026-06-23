@@ -950,24 +950,25 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
 
   const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
   const learnerCardBg = role==="learner"
-    ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : prayer.status==="Needs Review" ? "#eaf3ff" : "white")
+    ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : prayer.status==="Needs Review" ? "#eaf3ff" : "#f8f8f8")
     : "white";
+  const isNotStarted = role==="learner" && prayer.status==="Not Started";
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${statusColor}`,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative"}}>
+    <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
         <LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>
         <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
         {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
       </div>}
-      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?22:28):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+      <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?18:22):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
             {role==="instructor"?<InlineEdit value={prayer.name} onSave={t=>onNameSave(prayer.id,t)} style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?15:17}}/>:<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?15:17}}>{prayer.name}</span>}
             {role==="instructor"?<span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>p.<InlinePageEdit value={prayer.page??""} onSave={v=>onPageSave(prayer.id,v)} style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}/></span>:prayer.page?<span style={{color:C.midGray,fontSize:12}}>p.{prayer.page}</span>:null}
-            {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}</>}
+            
 
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -982,7 +983,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",paddingRight:role==="learner"?(isMobile?6:10):0}}>
-          {role==="learner"&&!simplified&&prayer.target_date?<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>:null}
+          <><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>
           {role==="instructor"?null:null}
         </div>
       </div>
@@ -1013,7 +1014,7 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [showAddPrayer,setShowAddPrayer]=useState(false);
-  const [collapsedParts,setCollapsedParts]=useState({});
+  const [collapsedParts,setCollapsedParts]=useState(()=>role==="learner"?{1:true,2:true,3:true,4:true}:{});
   const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"false");}catch{return false;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
   const [currentLearner,setCurrentLearner]=useState(null);
@@ -1065,6 +1066,10 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
     let pp=prayerList.filter(p=>p.part===part);
     if(role==="learner") pp=pp.filter(p=>!p.hidden_from_learner);
     if(hideNotStarted&&role==="learner") pp=pp.filter(p=>p.status!=="Not Started");
+    if(role==="learner"){
+      const rank=s=>s==="In Progress"?0:s==="Needs Review"?1:s==="Learned"?2:3;
+      return pp.slice().sort((a,b)=>rank(a.status)-rank(b.status));
+    }
     return pp.slice().sort(defaultSort);
   }
 
@@ -2372,29 +2377,50 @@ export default function App() {
       </div>}
 
       {/* Instructor learner info card */}
-      {selectedLearner&&role==="instructor"&&(()=>{const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);if(!l)return null;return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fit,minmax(140px,1fr))",gap:isMobile?12:16,marginBottom:16}}>
-          <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-          <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-          <div><div style={LS}>Access Key</div>
-            {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
-              <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
-              <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
-            </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
-              <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
-            </div>}
+      {selectedLearner&&role==="instructor"&&(()=>{
+        const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
+        if(!l)return null;
+        const [tier2Open,setTier2Open]=React.useState(false);
+        return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+          {/* Tier 1 — always visible */}
+          <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
+            <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
+            <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
+            <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less":"▼ More"}</button>
           </div>
-        </div>
-        {/* Instructor assignment + contact emails + save */}
-        <LearnerInfoEditor l={l} isMobile={isMobile} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-      </div>;})()}
+          {/* Tier 2 — collapsible */}
+          {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
+              <div><div style={LS}>Access Key</div>
+                {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
+                  <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
+                  <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
+                </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
+                  <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
+                </div>}
+              </div>
+            </div>
+            <LearnerInfoEditor l={l} isMobile={isMobile} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
+          </div>}
+        </div>;
+      })()}
 
       {/* Nav tabs */}
-      {showNavTabs&&<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{padding:role==="learner"?(isMobile?"8px 10px":"8px 12px"):(isMobile?"9px 14px":"10px 20px"),borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:role==="learner"?(isMobile?12:13):(isMobile?13:14),cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:role==="learner"&&!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
-      </div>}
+      {showNavTabs&&(role==="instructor"
+        ?<div style={{marginBottom:20}}>
+          <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            {[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"}].map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 140px",padding:isMobile?"11px 12px":"13px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"800",fontSize:isMobile?14:16,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[{id:"practicelog",label:"🎵 Practice Log"},{id:"services",label:"🕍 Shabbat Attendance"}].map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 100px",padding:isMobile?"7px 10px":"8px 14px",borderRadius:8,border:`1.5px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.lightBlue:"white",color:activeTab===t.id?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
+          </div>
+        </div>
+        :<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+          {tabs.map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{padding:isMobile?"8px 10px":"8px 12px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
+        </div>
+      )}
       {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
 
       {selectedLearner&&<>
