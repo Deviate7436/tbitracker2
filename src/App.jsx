@@ -1776,6 +1776,33 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
   </>;
 }
 
+// ── Instructor Learner Card ────────────────────────────────────────────────
+function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave}) {
+  const [tier2Open,setTier2Open]=useState(false);
+  return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+    <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
+      <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
+      <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
+      <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less":"▼ More"}</button>
+    </div>
+    {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><div style={LS}>Access Key</div>
+          {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
+            <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
+            <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
+          </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
+            <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
+          </div>}
+        </div>
+      </div>
+      <LearnerInfoEditor l={l} isMobile={isMobile} onSave={onSave}/>
+    </div>}
+  </div>;
+}
+
 // ── Login ──────────────────────────────────────────────────────────────────
 function LoginScreen({onLogin}) {
   const {isMobile}=useBreakpoint();
@@ -2380,31 +2407,14 @@ export default function App() {
       {selectedLearner&&role==="instructor"&&(()=>{
         const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
         if(!l)return null;
-        const [tier2Open,setTier2Open]=React.useState(false);
-        return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-          {/* Tier 1 — always visible */}
-          <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
-            <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-            <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-            <button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less":"▼ More"}</button>
-          </div>
-          {/* Tier 2 — collapsible */}
-          {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-              <div><div style={LS}>Access Key</div>
-                {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
-                  <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
-                  <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
-                </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.access_key}</span>
-                  <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
-                </div>}
-              </div>
-            </div>
-            <LearnerInfoEditor l={l} isMobile={isMobile} onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}/>
-          </div>}
-        </div>;
+        return <InstructorLearnerCard
+          l={l} isMobile={isMobile}
+          formatLastSignedIn={formatLastSignedIn}
+          formatServiceDate={formatServiceDate}
+          editingKey={editingKey} setEditingKey={setEditingKey}
+          saveAccessKey={saveAccessKey}
+          onSave={patch=>setLearners(prev=>prev.map(x=>x.id===l.id?patch:x))}
+        />;
       })()}
 
       {/* Nav tabs */}
