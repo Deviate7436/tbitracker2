@@ -142,7 +142,7 @@ const DB = {
 
   // Instructors
   getInstructor: async(key)=>{
-    const res=await fetch(`${SUPABASE_URL}/rest/v1/instructors?access_key=ilike.${encodeURIComponent(key)}&limit=1`,{headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`}});
+    const res=await fetch(`${SUPA_URL}/rest/v1/instructors?access_key=ilike.${encodeURIComponent(key)}&limit=1`,{headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});
     if(!res.ok){const e=await res.text();console.error("getInstructor error:",e);return null;}
     const rows=await res.json();return rows[0]||null;
   },
