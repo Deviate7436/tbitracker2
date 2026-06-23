@@ -983,7 +983,7 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",paddingRight:role==="learner"?(isMobile?6:10):0}}>
-          <><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>
+          {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>
           {role==="instructor"?null:null}
         </div>
       </div>
@@ -1014,7 +1014,13 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [showAddPrayer,setShowAddPrayer]=useState(false);
-  const [collapsedParts,setCollapsedParts]=useState(()=>role==="learner"?{1:true,2:true,3:true,4:true}:{});
+  const [collapsedParts,setCollapsedParts]=useState(()=>{
+    if(role==="learner") return {1:true,2:true,3:true,4:true};
+    try{return JSON.parse(localStorage.getItem(`tbi_collapsed_${learnerId}`)||"{}");}catch{return {};}
+  });
+  useEffect(()=>{
+    if(role==="instructor") try{localStorage.setItem(`tbi_collapsed_${learnerId}`,JSON.stringify(collapsedParts));}catch{}
+  },[collapsedParts,role,learnerId]);
   const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"false");}catch{return false;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
   const [currentLearner,setCurrentLearner]=useState(null);
