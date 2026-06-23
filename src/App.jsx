@@ -1863,7 +1863,7 @@ function LoginScreen({onLogin}) {
       const instr=await DB.getInstructor(instrPassword.trim());
       if(instr){onLogin("instructor",null,instr);}
       else setError("Access key not found.");
-    }catch(e){setError("Connection error. Please try again.");}
+    }catch(e){setError("Error: "+e.message);}
     setLoading(false);
   }
 
