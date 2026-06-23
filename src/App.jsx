@@ -140,6 +140,13 @@ const DB = {
   getArchivedLearners: () => sb("learners?select=*&archived=is.true&order=date_of_service"),
   archiveLearner: (id, archived) => sb(`learners?id=eq.${id}`, "PATCH", {archived}, {"Prefer":"return=representation"}),
 
+  // Instructors
+  getInstructor: async(key)=>{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/instructors?access_key=ilike.${encodeURIComponent(key)}&limit=1`,{headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`}});
+    if(!res.ok){const e=await res.text();console.error("getInstructor error:",e);return null;}
+    const rows=await res.json();return rows[0]||null;
+  },
+
   // Deleted learners backup
   insertDeletedLearner: (snapshot) => sb("deleted_learners", "POST", snapshot, {"Prefer":"return=representation"}),
 
@@ -1878,7 +1885,7 @@ function LoginScreen({onLogin}) {
         
       </>:<>
         <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
-                <input ref={instrPasswordRef} type="password" value={instrPassword} onChange={e=>{setInstrPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none",fontSize:16}} placeholder="Instructor password" autoFocus/>
+        <input value={instrPassword} onChange={e=>{setInstrPassword(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
         {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
         <button onClick={handleInstructorLogin} style={{width:"100%",marginTop:20,padding:"14px",background:C.navy,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer"}}>Sign In →</button>
         <button onClick={()=>{setMode("learner");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Learner Login</button>
