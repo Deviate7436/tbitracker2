@@ -2103,7 +2103,7 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
     textAlign:"center",
     position:"relative"
   });
-  return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(2,minmax(220px,1fr))",gap:isMobile?14:18,maxWidth:760,margin:"0 auto"}}>
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:isMobile?12:18,maxWidth:760,margin:"0 auto"}}>
     {buttonData.map(b=><button key={b.id} onClick={()=>onChoose(b.id)} style={cardStyle(b.color)}>
       {b.badge&&<span style={{position:"absolute",right:14,top:12,minWidth:28,height:28,borderRadius:999,display:"grid",placeItems:"center",background:b.badge==="check"?C.green:C.red,color:"white",fontFamily:"Raleway,sans-serif",fontSize:b.badge==="count"?15:14,fontWeight:"900",boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}>{b.badge==="check"?"✓":b.badgeText}</span>}
       <span style={{fontSize:isMobile?34:44,lineHeight:1}}>{b.icon}</span>
