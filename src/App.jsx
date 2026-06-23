@@ -1627,20 +1627,24 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
     return `${days} day${days!==1?"s":""}`;
   }
   const cdText=daysUntil!==null?countdownText(daysUntil):null;
-  return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+  return <div style={{background:"white",borderRadius:16,padding:isMobile?"10px 14px":"12px 20px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"inline-flex",width:"100%",boxSizing:"border-box"}}>
+    <div style={{display:"flex",alignItems:"center",gap:isMobile?24:40,flexWrap:"wrap",width:"100%"}}>
       <div style={{flexShrink:0}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?22:26,marginBottom:2}}>{learner.name}</div>
-        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?14:16,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{learner.hebrew_name}</div>}
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?20:24,lineHeight:1.1}}>{learner.name}</div>
+        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?13:15,fontWeight:"600",fontFamily:"Raleway,sans-serif",marginTop:2}}>{learner.hebrew_name}</div>}
       </div>
-      <div style={{display:"flex",gap:isMobile?12:20,flexWrap:"wrap",justifyContent:"flex-end",flex:1}}>
-        {learner.date_of_service&&<div style={{textAlign:"right"}}><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<div style={{color:C.midGray,fontSize:12}}>{learner.hebrew_date}</div>}</div></div>}
-        {learner.parashah&&<div style={{textAlign:"right"}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
-        {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"8px 14px",textAlign:"center",flexShrink:0}}>
-          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:22,lineHeight:1}}>{cdText}</div>
-          <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.blue,opacity:0.8,marginTop:2}}>until your service</div>
-        </div>}
-      </div>
+      {learner.date_of_service&&<div style={{flexShrink:0}}>
+        <div style={LS}>Date of Service</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<div style={{color:C.midGray,fontSize:11}}>{learner.hebrew_date}</div>}</div>
+      </div>}
+      {learner.parashah&&<div style={{flexShrink:0}}>
+        <div style={LS}>Parashah</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{learner.parashah}</div>
+      </div>}
+      {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0,marginLeft:"auto"}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8,marginTop:1}}>until your service</div>
+      </div>}
     </div>
   </div>;
 }
