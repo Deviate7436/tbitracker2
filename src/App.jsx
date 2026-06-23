@@ -786,7 +786,7 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
   }
   return <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap"}}>
     {last&&<span style={{fontSize:11,color:C.green,fontFamily:"Raleway,sans-serif"}}>{prettyDate(last)}</span>}
-    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1,flexShrink:0}}>{saving?"Logging…":"Log Today"}</button>
+    <button onClick={log} disabled={saving} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:saving?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:saving?0.6:1,flexShrink:0}}>{saving?"Logging…":"Log Review"}</button>
   </div>;
 }
 
@@ -959,9 +959,9 @@ function PrayerRow({prayer,role,onStatusChange,onLinkUpdate,onHideToggle,onNameS
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
       {role==="instructor"&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end",zIndex:2}}>
-        <LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>
         <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
         {prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap"}}>✓ {prayer.completion_date}</span>}
+        <LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>
       </div>}
       <div style={{padding:isMobile?"12px 14px":"14px 18px",paddingTop:role==="instructor"?(isMobile?42:40):(isMobile?"12px":"14px"),paddingLeft:role==="instructor"?(isMobile?70:76):(role==="learner"?(isMobile?22:28):undefined),paddingRight:role==="instructor"?(isMobile?14:18):(role==="learner"?(isMobile?18:22):undefined),display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
         <div>
@@ -1137,7 +1137,7 @@ function PrayerTracker({learnerId,role,onDing,mediaRefreshKey=0,learnerVoiceTrac
     {/* Instructor / learner controls */}
     <div style={{display:"grid",gridTemplateColumns:role==="instructor"?"minmax(220px,1fr) auto":"1fr",gap:12,alignItems:"center",marginBottom:20}}>
       <div style={{background:"white",borderRadius:16,padding:"14px 18px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-        <span style={{color:C.blue,fontWeight:"800",fontSize:16,fontFamily:"Raleway,sans-serif"}}>{completed}/{visiblePrayerList.length} learned</span>
+        
         {role==="instructor"&&<label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",userSelect:"none"}}>
           <input type="checkbox" checked={hideNotStarted} onChange={e=>setHideNotStarted(e.target.checked)} style={{accentColor:C.navy,width:15,height:15}}/>
           <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner</span>
@@ -1217,9 +1217,22 @@ function ServiceAttendance({learnerId,role}) {
   }
   useEffect(()=>{load();},[learnerId]);
 
+  function isFriday(val){const d=new Date(val+"T12:00:00");return d.getDay()===5;}
+  function isSaturday(val){const d=new Date(val+"T12:00:00");return d.getDay()===6;}
+
   async function update(key,val){
-    if(val&&!isFriOrSat(val)){alert("Please select a Friday or Saturday.");return;}
+    if(val){
+      const isFri=key.startsWith("fri");
+      if(isFri&&!isFriday(val)){alert("Please select a Friday.");return;}
+      if(!isFri&&!isSaturday(val)){alert("Please select a Saturday.");return;}
+    }
     const updated={...att,[key]:val,learner_id:learnerId};
+    setAtt(updated);
+    await DB.upsertAttendance(updated);
+  }
+
+  async function updateWhere(key,val){
+    const updated={...att,[`${key}_where`]:val,learner_id:learnerId};
     setAtt(updated);
     await DB.upsertAttendance(updated);
   }
@@ -1231,9 +1244,10 @@ function ServiceAttendance({learnerId,role}) {
   return <div>
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,marginBottom:16}}>Services Attended</h3>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:16}}>
-      {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
-        <input type="date" value={att[key]||""} onChange={e=>update(key,e.target.value)} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:"white"}}/>
+      {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
+        <input value={att[`${key}_where`]||""} onChange={e=>updateWhere(key,e.target.value)} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy}}/>
+        <input type="date" value={att[key]||""} onChange={e=>update(key,e.target.value)} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:"white",flexShrink:0}}/>
       </div>)}
     </div>
     <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
@@ -1243,7 +1257,6 @@ function ServiceAttendance({learnerId,role}) {
       </div>
       <ProgressBar value={attDone} max={10} color={C.green} height={8}/>
     </div>
-    {role==="learner"&&<p style={{color:C.midGray,fontSize:12,marginTop:12,fontFamily:"Raleway,sans-serif"}}>Enter the date of each service you attended. Only Fridays and Saturdays are accepted.</p>}
   </div>;
 }
 
@@ -1365,7 +1378,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
         {editing&&role==="instructor"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div style={{display:"grid",gridTemplateColumns:"150px 1fr",gap:8}}>
             <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...IS,fontSize:13,padding:"6px 9px"}}/>
-            <input value={editText} onChange={e=>setEditText(e.target.value)} placeholder="Assignment description..." style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+            <input value={editText} onChange={e=>setEditText(e.target.value)} placeholder="Write assignment here" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:5}}>
             {editSubtasks.map(s=><div key={s.id} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",alignItems:"center",gap:7,padding:"5px 8px",borderRadius:6,background:"#fafbfc",border:"1px solid #e9ecef"}}>
@@ -1375,7 +1388,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
             </div>)}
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            <input value={editSubInput} onChange={e=>setEditSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addEditSubtask();}}} placeholder="Add subtask…" style={{flex:1,minWidth:130,padding:"5px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
+            <input value={editSubInput} onChange={e=>setEditSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addEditSubtask();}}} placeholder="Add subtask (opt.)" style={{flex:1,minWidth:130,padding:"5px 10px",borderRadius:6,border:"1.5px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
             <Btn small outline color={C.blue} onClick={addEditSubtask}>+ Add</Btn>
           </div>
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -1449,7 +1462,7 @@ function Assignments({learnerId,role,learner}) {
     {role==="instructor"&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"160px 1fr",gap:10,marginBottom:10}}>
         <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={IS}/>
-        <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Assignment description..." onKeyDown={e=>e.key==="Enter"&&add()} style={IS}/>
+        <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Write assignment here" onKeyDown={e=>e.key==="Enter"&&add()} style={IS}/>
       </div>
       <div style={{background:C.cream,border:"1px solid #e9ecef",borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"800",color:C.navy,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8}}>Subtasks</div>
@@ -1460,13 +1473,13 @@ function Assignments({learnerId,role,learner}) {
           </div>)}
         </div>}
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <input value={newSubInput} onChange={e=>setNewSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addNewSubtask();}}} placeholder="Add subtask before saving…" style={{...IS,flex:1,minWidth:180,fontSize:13,padding:"7px 10px"}}/>
+          <input value={newSubInput} onChange={e=>setNewSubInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addNewSubtask();}}} placeholder="Add subtask (opt.)" style={{...IS,flex:1,minWidth:180,fontSize:13,padding:"7px 10px"}}/>
           <Btn small outline color={C.blue} onClick={addNewSubtask}>+ Add subtask</Btn>
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Sending…":"Save & Send"}</Btn>
-        {hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Email sends automatically to contacts.</span>}
+        <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Sending…":"Save & Send Email"}</Btn>
+        
         {!hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>No contact emails on file.</span>}
       </div>
     </div>}
@@ -1619,11 +1632,11 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"16px":"20px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
       <div style={{flex:1,minWidth:0,textAlign:"center"}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?22:26,marginBottom:2}}>{learner.name}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?26:32,marginBottom:2}}>{learner.name}</div>
         {learner.hebrew_name&&<div style={{color:C.blue,fontSize:isMobile?14:16,fontWeight:"600",fontFamily:"Raleway,sans-serif",marginBottom:12}}>{learner.hebrew_name}</div>}
-        <div style={{display:"flex",gap:isMobile?18:36,flexWrap:"wrap",marginTop:4,justifyContent:"center"}}>
-          {learner.date_of_service&&<div style={{textAlign:"center"}}><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
-          {learner.parashah&&<div style={{textAlign:"center"}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8,paddingLeft:"15%"}}>
+          {learner.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{formatServiceDate(learner.date_of_service)}{learner.hebrew_date&&<span style={{color:C.midGray,fontSize:12,marginLeft:8}}>{learner.hebrew_date}</span>}</div></div>}
+          {learner.parashah&&<div><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{learner.parashah}</div></div>}
         </div>
       </div>
       {cdText&&<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0}}>
@@ -1744,9 +1757,9 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
           <span style={{fontSize:12,color:C.midGray}}>{emailOpen?"▲":"▼"}</span>
         </button>
         {emailOpen&&<div style={{padding:12,display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr",gap:10,borderTop:"1px solid #f0f2f5"}}>
-          <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-          <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
-          <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email@example.com" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+          <div><div style={LS}>Contact 1</div><input type="email" value={email1Draft} onChange={e=>setEmail1Draft(e.target.value)} onBlur={saveEmails} placeholder="email address" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+          <div><div style={LS}>Contact 2</div><input type="email" value={email2Draft} onChange={e=>setEmail2Draft(e.target.value)} onBlur={saveEmails} placeholder="email address" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
+          <div><div style={LS}>Contact 3</div><input type="email" value={email3Draft} onChange={e=>setEmail3Draft(e.target.value)} onBlur={saveEmails} placeholder="email address" style={{...IS,fontSize:13,padding:"6px 10px"}}/></div>
         </div>}
       </div>
     </div>
@@ -1792,7 +1805,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
     </div>
     {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <div><div style={LS}>Access Key</div>
+        <div><div style={LS}>Learner Access Key</div>
           {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
             <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
             <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
