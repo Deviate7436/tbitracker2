@@ -965,7 +965,7 @@ function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideTo
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
       {role==="instructor"&&isLead&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"600",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,zIndex:2}}>
-        {!isLead&&<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/>}
+        {!isLead&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}<LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/></>}
         {isLead&&<>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <select value={prayer.status} onChange={e=>onStatusChange(prayer.id,e.target.value)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${statusColor}`,background:`${statusColor}22`,color:statusColor,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}</select>
@@ -997,7 +997,7 @@ function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideTo
           {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>}
         </div>
       </div>
-      {role==="instructor"&&isLead&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
+      {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
         <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
@@ -1012,7 +1012,7 @@ function PrayerRow({prayer,role,isLead=true,onStatusChange,onLinkUpdate,onHideTo
           <input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
           {prayer.target_date&&<button onClick={()=>onLinkUpdate(prayer.id,{target_date:null})} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12}}>✕</button>}
         </div>
-        <textarea value={notesDraft} onChange={e=>updateNotes(e.target.value)} onBlur={()=>flushNotes(notesDraftRef.current)} placeholder="Instructor notes…" style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
+        <textarea value={notesDraft} onChange={e=>isLead&&updateNotes(e.target.value)} onBlur={()=>isLead&&flushNotes(notesDraftRef.current)} readOnly={!isLead} placeholder={isLead?"Instructor notes…":"(read only)"} style={{width:"100%",minHeight:90,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",resize:"vertical",background:"white",color:C.navy}}/>
       </div>}
     </div>
   </>;
@@ -1245,7 +1245,7 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:16}}>
       {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
-        <input value={att[`${key}_where`]||""} onChange={e=>updateWhere(key,e.target.value)} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy}}/>
+        <input value={att[`${key}_where`]||""} onChange={e=>(role==="learner"||isLead)&&updateWhere(key,e.target.value)} readOnly={role==="instructor"&&!isLead} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white"}}/>
         <input type="date" value={att[key]||""} onChange={e=>(role==="learner"||isLead)&&update(key,e.target.value)} readOnly={role==="instructor"&&!isLead} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white",flexShrink:0}}/>
       </div>)}
     </div>
@@ -1793,12 +1793,26 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
 }
 
 // ── Instructor Learner Card ────────────────────────────────────────────────
-function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave,isLead=true}) {
+function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave,isLead=true,instructorUser=null}) {
   const [tier2Open,setTier2Open]=useState(false);
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
     <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
-      <LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
-      <LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
+      {isLead
+        ?<LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
+        :<div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?18:22}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:13,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{l.hebrew_name}</div>}<div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2}}>Last signed in: {l.last_signed_in_at?new Date(l.last_signed_in_at).toLocaleDateString():"Never"}</div></div>}
+      {isLead
+        ?<LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
+        :<div>{l.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{l.date_of_service}</div></div>}{l.parashah&&<div style={{marginTop:4}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{l.parashah}</div></div>}</div>}
+      {(()=>{
+        if(!l.date_of_service)return null;
+        const days=Math.ceil((new Date(l.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24));
+        if(days<=0)return null;
+        const txt=days>90?`${Math.floor(days/30)}mo`:days>30?`${Math.floor(days/7)}w`:`${days}d`;
+        return <div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
+          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:18,lineHeight:1}}>{txt}</div>
+          <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8}}>until service</div>
+        </div>;
+      })()}
       {isLead&&<button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>}
     </div>
     {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
@@ -2421,7 +2435,7 @@ export default function App() {
         <div style={{color:C.blue,fontSize:isMobile?9:11,letterSpacing:2,textTransform:"uppercase",fontWeight:"700",marginTop:2}}>Progress Tracker</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
-        {!isMobile&&<span style={{color:C.midGray,fontSize:13,textTransform:"capitalize",fontWeight:"600"}}>{role}</span>}
+        {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":"Team Member"}</span>}
         {role==="instructor"&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
         <button onClick={signOut} style={{background:"none",border:"1px solid #dee2e6",color:C.midGray,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Sign Out</button>
       </div>
@@ -2462,7 +2476,7 @@ export default function App() {
       {selectedLearner&&role==="instructor"&&(()=>{
         const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
         if(!l)return null;
-        return <InstructorLearnerCard isLead={isLead}
+        return <InstructorLearnerCard isLead={isLead} instructorUser={instructorUser}
           l={l} isMobile={isMobile}
           formatLastSignedIn={formatLastSignedIn}
           formatServiceDate={formatServiceDate}
