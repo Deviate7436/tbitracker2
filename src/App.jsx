@@ -948,10 +948,10 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   </>;
 
   const statusColor=STATUS_COLORS[prayer.status]||"#adb5bd";
-  const learnerCardBg = role==="learner"
+  const learnerCardBg = (role==="learner"||role==="parent")
     ? (prayer.status==="In Progress" ? "#fff8d6" : prayer.status==="Learned" ? "#eaf8ea" : prayer.status==="Needs Review" ? "#eaf3ff" : "#f8f8f8")
     : "white";
-  const isNotStarted = role==="learner" && prayer.status==="Not Started";
+  const isNotStarted = (role==="learner"||role==="parent") && prayer.status==="Not Started";
   return <>
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
@@ -980,6 +980,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
               ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
+            {role==="parent"&&(effectivePdfUrl||effectiveAudioUrl)&&<button onClick={()=>effectivePdfUrl?setShowMedia("pdf"):setShowMedia("audio")} style={{padding:"5px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
             {hasAudio&&!hasPdf&&!simplified
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
@@ -987,7 +988,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",paddingRight:role==="learner"?(isMobile?6:10):0}}>
-          {role!=="instructor"&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>}
+          {(role==="learner"||role==="parent")&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>}
         </div>
       </div>
       {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
@@ -1251,8 +1252,8 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:16}}>
       {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
-        <input value={att[`${key}_where`]||""} onChange={e=>(role==="learner"||isLead)&&updateWhere(key,e.target.value)} readOnly={role==="instructor"&&!isLead} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white"}}/>
-        <input type="date" value={att[key]||""} onChange={e=>(role==="learner"||isLead)&&update(key,e.target.value)} readOnly={role==="instructor"&&!isLead} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white",flexShrink:0}}/>
+        <input value={att[`${key}_where`]||""} onChange={e=>(role==="learner"||role==="parent"||isLead)&&updateWhere(key,e.target.value)} readOnly={role==="instructor"&&!isLead} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white"}}/>
+        <input type="date" value={att[key]||""} onChange={e=>(role==="learner"||role==="parent"||isLead)&&update(key,e.target.value)} readOnly={role==="instructor"&&!isLead} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white",flexShrink:0}}/>
       </div>)}
     </div>
     <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
@@ -1622,6 +1623,36 @@ function SmartReview({learnerId}) {
     </div>}
   </div>;
 }
+// ── Parent Header Card ────────────────────────────────────────────────────
+function ParentHeaderCard({learner,isMobile,formatServiceDate}) {
+  const daysUntil=learner.date_of_service?Math.ceil((new Date(learner.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
+  function countdownText(days){
+    if(days<=0)return null;
+    if(days>90){const m=Math.floor(days/30);return `${m} month${m!==1?"s":""}`;}
+    if(days>30){const w=Math.floor(days/7);return `${w} week${w!==1?"s":""}`;}
+    return `${days} day${days!==1?"s":""}`;
+  }
+  const cdText=daysUntil!==null?countdownText(daysUntil):null;
+  const linkBtn={display:"inline-flex",alignItems:"center",gap:5,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${C.blue}`,color:C.blue,fontSize:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",background:C.lightBlue};
+  return <div style={{background:"white",borderRadius:16,padding:isMobile?"12px 16px":"14px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+    <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+      <div style={{flexShrink:0}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?18:22}}>{learner.name}</div>
+        {learner.hebrew_name&&<div style={{color:C.blue,fontSize:13,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{learner.hebrew_name}</div>}
+        {learner.date_of_service&&<div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray,marginTop:2}}>Service: {formatServiceDate(learner.date_of_service)}</div>}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
+        <a href="https://docs.google.com/document/d/12jHD6po6KJkZic_GymbUnPi0NO_pUOQ9ajiPR6EH8WA/edit?usp=sharing" target="_blank" rel="noopener noreferrer" style={linkBtn}>📅 Important Dates</a>
+        {learner.bnei_mitzvah_agreement_url&&<a href={learner.bnei_mitzvah_agreement_url} target="_blank" rel="noopener noreferrer" style={linkBtn}>📄 B'nei Mitzvah Agreement</a>}
+      </div>
+      {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8,marginTop:1}}>until service</div>
+      </div>}
+    </div>
+  </div>;
+}
+
 // ── Learner Header Card ────────────────────────────────────────────────────
 function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
   const daysUntil=learner.date_of_service?Math.ceil((new Date(learner.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24)):null;
@@ -1835,6 +1866,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
         </div>
       </div>
       <LearnerInfoEditor l={l} isMobile={isMobile} onSave={onSave}/>
+      {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
       <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
         <HideNotStartedToggle learnerId={l.id}/>
       </div>
@@ -1879,7 +1911,9 @@ function LoginScreen({onLogin}) {
         catch(e){console.error("Could not update learner last sign-in:",e);}
         onLogin("learner",learner.id);
       } else {
-        setError("Access key not found. Check with your instructor.");
+        const parentLearner=(rows||[]).find(l=>l.parent_access_key&&l.parent_access_key.toUpperCase()===accessKey.toUpperCase());
+        if(parentLearner){onLogin("parent",parentLearner.id);}
+        else setError("Access key not found. Check with your instructor.");
       }
     }catch(e){setError("Error: "+e.message);}
     setLoading(false);
@@ -2296,6 +2330,9 @@ export default function App() {
     if(r==="learner"&&lid){
       setLearnerId(lid);setSelectedLearner(lid);setLearners([]);goTab("home");
       loadCurrentLearnerData(lid);
+    } else if(r==="parent"&&lid){
+      setLearnerId(lid);setSelectedLearner(lid);setLearners([]);goTab("prayers");
+      loadCurrentLearnerData(lid);
     } else {
       persistInstructor(instrUser);
       setLearnerId(null);goTab("prayers");await loadLearners();
@@ -2304,7 +2341,7 @@ export default function App() {
 
   // On mount, if already logged in as learner, load their data and restore selected tracker
   useEffect(()=>{
-    if(role==="learner"&&learnerId) {
+    if((role==="learner"||role==="parent")&&learnerId) {
       setSelectedLearner(learnerId);
       loadCurrentLearnerData(learnerId);
     }
@@ -2385,6 +2422,8 @@ export default function App() {
   const activeLearner=role==="instructor"?learners.find(l=>l.id===selectedLearner):currentLearnerData;
   const tabs=role==="instructor"
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"practicelog",label:"🎵 Practice Log"},{id:"services",label:"🕍 Shabbat Attendance"}]
+    :role==="parent"
+    ?[{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"practicelog",label:"🎵 Practice Log"},{id:"services",label:"🕍 Shabbat"}]
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"smartreview",label:"🧠 Review"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}];
   const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
 
@@ -2429,6 +2468,7 @@ export default function App() {
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":"Team Member"}</span>}
+        {instructorUser&&instructorUser.role==="team"&&<a href="mailto:cantorchilds@tbiport.org?subject=Question from Team Member" style={{padding:isMobile?"5px 8px":"6px 12px",borderRadius:8,border:`1px solid ${C.blue}55`,background:C.lightBlue,color:C.blue,fontSize:isMobile?11:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",flexShrink:0}}>✉ Contact Cantor David</a>}
         {role==="instructor"&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
         <button onClick={signOut} style={{background:"none",border:"1px solid #dee2e6",color:C.midGray,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Sign Out</button>
       </div>
@@ -2438,6 +2478,7 @@ export default function App() {
 
       {/* Learner header (learner role) */}
       {role==="learner"&&currentLearnerData&&<LearnerHeaderCard learner={currentLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
+      {role==="parent"&&currentLearnerData&&<ParentHeaderCard learner={currentLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
 
       {/* Instructor learner selector — dropdown sorted by date */}
       {role==="instructor"&&<div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
