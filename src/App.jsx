@@ -918,8 +918,11 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
+  const chatContainerRef=useRef(null);
   useEffect(()=>{
-    if(notesOpen&&chatEndRef.current) chatEndRef.current.scrollIntoView({behavior:"smooth"});
+    if(notesOpen&&chatContainerRef.current){
+      chatContainerRef.current.scrollTop=chatContainerRef.current.scrollHeight;
+    }
   },[notesOpen,(prayer.notes_chat||[]).length]);
 
   async function sendChatMessage(){
@@ -1002,7 +1005,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           <input type="date" value={prayer.target_date||""} onChange={e=>onLinkUpdate(prayer.id,{target_date:e.target.value})} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif"}}/>
           {prayer.target_date&&<button onClick={()=>onLinkUpdate(prayer.id,{target_date:null})} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12}}>✕</button>}
         </div>}
-        <div style={{maxHeight:220,overflowY:"auto",padding:"10px 18px",display:"flex",flexDirection:"column",gap:8}}>
+        <div ref={chatContainerRef} style={{maxHeight:220,overflowY:"auto",padding:"10px 18px",display:"flex",flexDirection:"column",gap:8}}>
           {(prayer.notes_chat||[]).length===0&&<p style={{color:C.midGray,fontSize:12,fontStyle:"italic",fontFamily:"Raleway,sans-serif",margin:0}}>No notes yet.</p>}
           {(prayer.notes_chat||[]).map(msg=><div key={msg.id} style={{background:"white",borderRadius:10,padding:"8px 12px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
@@ -1011,11 +1014,10 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
             </div>
             <p style={{margin:0,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",lineHeight:1.4}}>{msg.text}</p>
           </div>)}
-          <div ref={chatEndRef}/>
         </div>
         <div style={{padding:"10px 18px 14px",display:"flex",gap:8}}>
           <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendChatMessage()} placeholder="Add a note…" style={{flex:1,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${C.purple}55`,fontSize:13,fontFamily:"Raleway,sans-serif",outline:"none"}}/>
-          <button onClick={sendChatMessage} disabled={chatSending||!chatInput.trim()} style={{background:C.purple,color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:"700",cursor:chatSending?"not-allowed":"pointer",opacity:chatSending?0.6:1,fontFamily:"Raleway,sans-serif"}}>Send</button>
+          <button onClick={sendChatMessage} disabled={chatSending||!chatInput.trim()} style={{background:C.purple,color:"white",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:"700",cursor:chatSending?"not-allowed":"pointer",opacity:chatSending?0.6:1,fontFamily:"Raleway,sans-serif"}}>Post</button>
         </div>
       </div>}
     </div>
