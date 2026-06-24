@@ -1897,6 +1897,7 @@ function LoginScreen({onLogin}) {
       <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
       {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
       <button onClick={handleLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Sign In →"}</button>
+      <button onClick={()=>alert("Check the inside of your binder for your access key, or email cantorchilds@tbiport.org for help.")} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.midGray,fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",textDecoration:"underline"}}>Forgot access key?</button>
     </div>
   </div>;
 }
