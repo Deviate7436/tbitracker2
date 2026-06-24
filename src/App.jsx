@@ -1859,12 +1859,18 @@ function HideNotStartedToggle({learnerId}) {
 // ── Login ──────────────────────────────────────────────────────────────────
 function LoginScreen({onLogin}) {
   const {isMobile}=useBreakpoint();
-  const [mode,setMode]=useState("learner");const [accessKey,setAccessKey]=useState("");const [instrPassword,setInstrPassword]=useState("");const [error,setError]=useState("");const [loading,setLoading]=useState(false);const instrPasswordRef=useRef(null);
-  useEffect(()=>{if(mode==="instructor")setTimeout(()=>instrPasswordRef.current?.focus(),0);},[mode]);
+  const [accessKey,setAccessKey]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
 
-  async function handleLearnerLogin(){
+  async function handleLogin(){
+    if(!accessKey.trim())return;
     setError("");setLoading(true);
     try{
+      // Check instructors first
+      const instr=await DB.getInstructor(accessKey.trim());
+      if(instr){onLogin("instructor",null,instr);setLoading(false);return;}
+      // Then check learners
       const rows=await DB.getLearners();
       const learner=(rows||[]).find(l=>l.access_key&&l.access_key.toUpperCase()===accessKey.toUpperCase());
       if(learner){
@@ -1872,17 +1878,9 @@ function LoginScreen({onLogin}) {
         try{await DB.updateLearnerLastSignedIn(learner.id,lastSignedInAt);learner.last_signed_in_at=lastSignedInAt;}
         catch(e){console.error("Could not update learner last sign-in:",e);}
         onLogin("learner",learner.id);
+      } else {
+        setError("Access key not found. Check with your instructor.");
       }
-      else setError("Access key not found. Check with your instructor.");
-    }catch(e){setError("Connection error. Please try again.");}
-    setLoading(false);
-  }
-  async function handleInstructorLogin(){
-    setError("");setLoading(true);
-    try{
-      const instr=await DB.getInstructor(instrPassword.trim());
-      if(instr){onLogin("instructor",null,instr);}
-      else setError("Access key not found.");
     }catch(e){setError("Error: "+e.message);}
     setLoading(false);
   }
@@ -1895,22 +1893,10 @@ function LoginScreen({onLogin}) {
       <div style={{color:"rgba(255,255,255,0.8)",fontSize:isMobile?13:15,letterSpacing:2,textTransform:"uppercase",fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Progress Tracker</div>
     </div>
     <div style={{background:"white",borderRadius:20,padding:isMobile?"28px 24px":"40px 48px",width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
-      {mode==="learner"?<>
-        <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Welcome!</h2>
-        <p style={{color:C.midGray,fontSize:14,margin:"0 0 24px",fontFamily:"Raleway,sans-serif"}}>Enter your access key to open your tracker.</p>
-        <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLearnerLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
-        {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
-        <button onClick={handleLearnerLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Open My Tracker →"}</button>
-        <button onClick={()=>{setMode("instructor");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Instructor Login</button>
-        
-      </>:<>
-        <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 6px",fontSize:22}}>Instructor Login</h2>
-        <input value={instrPassword} onChange={e=>{setInstrPassword(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleInstructorLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
-        {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
-        <button onClick={handleInstructorLogin} style={{width:"100%",marginTop:20,padding:"14px",background:C.navy,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer"}}>Sign In →</button>
-        <button onClick={()=>{setMode("learner");setError("");}} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.blue,fontSize:13,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"underline"}}>Learner Login</button>
-        
-      </>}
+      <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 20px",fontSize:22,textAlign:"center"}}>Welcome!</h2>
+      <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
+      {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
+      <button onClick={handleLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Sign In →"}</button>
     </div>
   </div>;
 }
