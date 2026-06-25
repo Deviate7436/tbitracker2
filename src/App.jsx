@@ -1642,8 +1642,11 @@ function SmartReview({learnerId}) {
     const newItem={id:current.id,name:current.name,status:current.status,rating};
     const updated=[...reviewedItems,newItem];
     setReviewedItems(updated);setShowPdfModal(false);setShowAudioModal(false);
-    if(rating==="again"){
-      const newQ=[...queue.slice(0,idx),...queue.slice(idx+1),current];
+    if(rating==="again"||rating==="hard"){
+      // Again: move to next position; Hard: move to middle of remaining queue
+      const remaining=[...queue.slice(0,idx),...queue.slice(idx+1)];
+      const insertAt=rating==="again"?idx:Math.min(idx+Math.ceil((remaining.length-idx)/2),remaining.length);
+      const newQ=[...remaining.slice(0,insertAt),current,...remaining.slice(insertAt)];
       setQueue(newQ);
     } else if(idx+1>=queue.length){
       const session={id:genId(),learner_id:learnerId,date:today,type:"smart_review",notes:`Smart Review — ${updated.length} item${updated.length!==1?"s":""} reviewed`,items:updated,duration:null};
