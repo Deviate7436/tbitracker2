@@ -140,6 +140,11 @@ const DB = {
   getArchivedLearners: () => sb("learners?select=*&archived=is.true&order=date_of_service"),
   archiveLearner: (id, archived) => sb(`learners?id=eq.${id}`, "PATCH", {archived}, {"Prefer":"return=representation"}),
 
+  // Media Library
+  getMediaLibrary: () => sb("media_library?select=*&order=created_at.desc"),
+  insertMediaLibraryItem: (item) => sb("media_library", "POST", item, {"Prefer":"return=representation"}),
+  deleteMediaLibraryItem: (id) => sb(`media_library?id=eq.${id}`, "DELETE"),
+
   // Instructors
   getInstructor: async(key)=>{
     const res=await fetch(`${SUPA_URL}/rest/v1/instructors?access_key=ilike.${encodeURIComponent(key)}&limit=1`,{headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});
@@ -846,7 +851,44 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
   </div>;
 }
 
-function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArchived,setShowArchived,loadArchivedLearners,formatServiceDate,handleRestore,setDeleteConfirm}) {
+// ── Media Library Panel ────────────────────────────────────────────────────
+function MediaLibraryPanel({instructorUser}) {
+  const [items,setItems]=useState([]);const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState("all");const [copiedId,setCopiedId]=useState(null);
+  useEffect(()=>{(async()=>{setLoading(true);const r=await DB.getMediaLibrary();setItems(r||[]);setLoading(false);})();},[]);
+  async function upload(type,file){
+    if(!file)return;
+    const url=type==="audio"?await uploadAudioToStorage(file):await uploadPdfToStorage(file);
+    const item={id:genId(),name:file.name,type,url,uploaded_by:instructorUser?.name||"Instructor"};
+    await DB.insertMediaLibraryItem(item);setItems(prev=>[item,...prev]);
+  }
+  async function remove(id){await DB.deleteMediaLibraryItem(id);setItems(prev=>prev.filter(x=>x.id!==id));}
+  function copyUrl(id,url){navigator.clipboard.writeText(url).catch(()=>{});setCopiedId(id);setTimeout(()=>setCopiedId(null),2000);}
+  const filtered=filter==="all"?items:items.filter(x=>x.type===filter);
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:4}}>
+        {["all","audio","pdf"].map(f=><button key={f} onClick={()=>setFilter(f)} style={{padding:"3px 10px",borderRadius:20,border:`1.5px solid ${filter===f?C.blue:"#dee2e6"}`,background:filter===f?C.blue:"white",color:filter===f?"white":C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:11,cursor:"pointer"}}>{f==="all"?"All":f==="audio"?"🎵 Audio":"📄 PDF"}</button>)}
+      </div>
+      <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
+        <label style={{padding:"4px 10px",borderRadius:7,background:C.lightBlue,border:`1.5px solid ${C.blue}`,color:C.blue,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:11,cursor:"pointer"}}>+ Audio<input type="file" accept="audio/*" style={{display:"none"}} onChange={e=>e.target.files[0]&&upload("audio",e.target.files[0])}/></label>
+        <label style={{padding:"4px 10px",borderRadius:7,background:"#f0faf0",border:`1.5px solid ${C.green}`,color:C.darkGreen,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:11,cursor:"pointer"}}>+ PDF<input type="file" accept="application/pdf" style={{display:"none"}} onChange={e=>e.target.files[0]&&upload("pdf",e.target.files[0])}/></label>
+      </div>
+    </div>
+    {loading?<LoadingSpinner message="Loading…"/>:filtered.length===0
+      ?<p style={{color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif",fontSize:12}}>No files yet.</p>
+      :<div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto"}}>
+        {filtered.map(item=><div key={item.id} style={{background:"white",borderRadius:8,padding:"9px 12px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+          <span style={{flexShrink:0}}>{item.type==="audio"?"🎵":"📄"}</span>
+          <div style={{flex:1,minWidth:0}}><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div><div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.midGray}}>{item.uploaded_by} · {new Date(item.created_at).toLocaleDateString()}</div></div>
+          <button onClick={()=>copyUrl(item.id,item.url)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.blue}`,background:copiedId===item.id?C.blue:"white",color:copiedId===item.id?"white":C.blue,fontSize:10,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:"pointer",flexShrink:0}}>{copiedId===item.id?"✓":"Copy URL"}</button>
+          <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:14,flexShrink:0}}>✕</button>
+        </div>)}
+      </div>}
+  </div>;
+}
+
+function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArchived,setShowArchived,loadArchivedLearners,formatServiceDate,handleRestore,setDeleteConfirm,instructorUser=null}) {
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});const [defaultMediaMap,setDefaultMediaMap]=useState({});
   function dmKey(name,part){return `${name}|${part}`;}
@@ -905,7 +947,8 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
-  const [showMedia,setShowMedia]=useState(null); // null | "pdf" | "audio"
+  const [showMedia,setShowMedia]=useState(null);
+  const [showMultiPage,setShowMultiPage]=useState(false); // null | "pdf" | "audio"
   const [chatInput,setChatInput]=useState("");
   const [chatSending,setChatSending]=useState(false);
   const chatEndRef=useRef(null);
@@ -936,6 +979,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   }
 
   if(hidden&&role==="instructor") return <>
+    {showMultiPage&&prayer.pages&&prayer.pages.length>1&&<MultiPageViewer pages={prayer.pages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",paddingLeft:isMobile?70:76,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"relative"}}>
@@ -977,7 +1021,10 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             {hasPdf
-              ?<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>
+              ?<>{prayer.pages&&prayer.pages.length>1
+                ?<button onClick={()=>setShowMultiPage(true)} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Pages ({prayer.pages.length})</button>
+                :<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
+              </>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
             {role==="parent"&&(effectivePdfUrl||effectiveAudioUrl)&&<button onClick={()=>effectivePdfUrl?setShowMedia("pdf"):setShowMedia("audio")} style={{padding:"5px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
@@ -995,10 +1042,13 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
         <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
-        <div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
+        {/* Single media (used when pages.length <= 1) */}
+        {(!prayer.pages||prayer.pages.length<=1)&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
           <div><div style={LS}>PDF Override</div><PdfUploadControl label="Learner PDF" value={prayer.pdf} name={prayer.pdf_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{pdf:null,pdf_name:null})}/></div>
           <div><div style={LS}>Audio Override</div><AudioUploadControl label="Learner Audio" value={prayer.audio} name={prayer.audio_name} onUploaded={(url,label)=>onLinkUpdate(prayer.id,{audio:url,audio_name:label})} onRemove={()=>onLinkUpdate(prayer.id,{audio:null,audio_name:null})}/></div>
-        </div>
+        </div>}
+        {/* Multi-page editor */}
+        <MultiPageEditor prayer={prayer} onLinkUpdate={onLinkUpdate}/>
       </div>}
       {notesOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",background:"#fbf8ff"}}>
         {isLead&&<div style={{padding:"12px 18px 0",display:"flex",alignItems:"center",gap:8}}>
@@ -1023,6 +1073,41 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
       </div>}
     </div>
   </>;
+}
+
+// ── Multi-Page Editor ─────────────────────────────────────────────────────
+function MultiPageEditor({prayer,onLinkUpdate}) {
+  const pages=prayer.pages||[];
+  const [adding,setAdding]=useState(false);
+  async function addPage(){
+    const newPage={id:genId(),label:`Page ${pages.length+1}`,pdf_url:null,pdf_name:null,audio_url:null,audio_name:null};
+    await onLinkUpdate(prayer.id,{pages:[...pages,newPage]});
+    setAdding(false);
+  }
+  async function removePage(pid){
+    await onLinkUpdate(prayer.id,{pages:pages.filter(p=>p.id!==pid)});
+  }
+  async function updatePage(pid,patch){
+    await onLinkUpdate(prayer.id,{pages:pages.map(p=>p.id===pid?{...p,...patch}:p)});
+  }
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13}}>Multi-Page Media</span>
+      <span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{pages.length} page{pages.length!==1?"s":""}</span>
+      <Btn small color={C.blue} onClick={addPage}>+ Add Page</Btn>
+      {pages.length>0&&<Btn small outline color={C.red} onClick={()=>onLinkUpdate(prayer.id,{pages:[]})}>Clear All</Btn>}
+    </div>
+    {pages.map((pg,i)=><div key={pg.id} style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13}}>Page {i+1}</span>
+        <button onClick={()=>removePage(pg.id)} style={{marginLeft:"auto",background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:16}}>
+        <div><div style={LS}>PDF</div><PdfUploadControl label={`Page ${i+1} PDF`} value={pg.pdf_url} name={pg.pdf_name} onUploaded={(url,label)=>updatePage(pg.id,{pdf_url:url,pdf_name:label})} onRemove={()=>updatePage(pg.id,{pdf_url:null,pdf_name:null})}/></div>
+        <div><div style={LS}>Audio</div><AudioUploadControl label={`Page ${i+1} Audio`} value={pg.audio_url} name={pg.audio_name} onUploaded={(url,label)=>updatePage(pg.id,{audio_url:url,audio_name:label})} onRemove={()=>updatePage(pg.id,{audio_url:null,audio_name:null})}/></div>
+      </div>
+    </div>)}
+  </div>;
 }
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
@@ -1411,6 +1496,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   const [assignments,setAssignments]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [newDate,setNewDate]=useState("");const [newText,setNewText]=useState("");const [confirmId,setConfirmId]=useState(null);const [saving,setSaving]=useState(false);
   const [newSubInput,setNewSubInput]=useState("");const [newSubtasks,setNewSubtasks]=useState([]);
+  const [newLinkedPrayers,setNewLinkedPrayers]=useState([]);
   const [emailStatus,setEmailStatus]=useState({});
 
   async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
@@ -1438,12 +1524,12 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   async function add(){
     if(!newText.trim())return;
     setSaving(true);
-    const a={id:genId(),learner_id:learnerId,date:newDate||new Date().toISOString().split("T")[0],text:newText.trim(),done:false,subtasks:newSubtasks};
+    const a={id:genId(),learner_id:learnerId,date:newDate||new Date().toISOString().split("T")[0],text:newText.trim(),done:false,subtasks:newSubtasks,linked_prayer_ids:newLinkedPrayers};
     try{
       const inserted=await DB.insertAssignment(a);
       const saved=Array.isArray(inserted)&&inserted[0]?inserted[0]:a;
       setAssignments(prev=>[saved,...prev]);
-      setNewDate("");setNewText("");setNewSubInput("");setNewSubtasks([]);
+      setNewDate("");setNewText("");setNewSubInput("");setNewSubtasks([]);setNewLinkedPrayers([]);
       if(learner&&(learner.email1||learner.email2||learner.email3)){
         await emailAssignment(saved,{quiet:true});
       }
@@ -1470,6 +1556,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
         <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={IS}/>
         <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Write assignment here" onKeyDown={e=>e.key==="Enter"&&add()} style={IS}/>
       </div>
+      <LinkedPrayersSelector learnerId={learnerId} selected={newLinkedPrayers} onChange={setNewLinkedPrayers}/>
       <div style={{background:C.cream,border:"1px solid #e9ecef",borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"800",color:C.navy,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8}}>Subtasks</div>
         {newSubtasks.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
@@ -1508,15 +1595,23 @@ function SmartReview({learnerId}) {
   const {isMobile}=useBreakpoint();
   const [loading,setLoading]=useState(true);
   const [queue,setQueue]=useState([]);const [idx,setIdx]=useState(0);const [sessionDone,setSessionDone]=useState(false);const [reviewedItems,setReviewedItems]=useState([]);const [showPdfModal,setShowPdfModal]=useState(false);const [showAudioModal,setShowAudioModal]=useState(false);
+  const [todayCount,setTodayCount]=useState(0);const [overrideCap,setOverrideCap]=useState(false);
 
   function dmKey(name,part){return `${name}|${part}`;}
 
   async function load(){
     setLoading(true);
-    const [rows,defaultRows,learnerRow]=await Promise.all([DB.getPrayers(learnerId),DB.getDefaultMedia(),DB.getLearner(learnerId)]);
+    const today=new Date().toISOString().split("T")[0];
+    const [rows,defaultRows,learnerRow,sessions,assignments]=await Promise.all([
+      DB.getPrayers(learnerId),DB.getDefaultMedia(),DB.getLearner(learnerId),
+      DB.getSessions(learnerId),DB.getAssignments(learnerId)
+    ]);
+    const todayReviewed=(sessions||[]).filter(s=>s.type==="smart_review"&&s.date===today).reduce((sum,s)=>(s.items?.length||0)+sum,0);
+    setTodayCount(todayReviewed);
     const voiceTrack=learnerRow?.voice_track||"lower";
     const defaults={};
     (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={...d};});
+    const activeLinked=new Set((assignments||[]).filter(a=>!a.done).flatMap(a=>a.linked_prayer_ids||[]));
     const ps=(rows||[]).filter(p=>p.status!=="Not Started"&&!p.hidden_from_learner).map(p=>{
       const dm=defaults[dmKey(p.name,p.part)]||{};
       const selectedDefaultAudio=getDefaultAudioForVoice(dm,voiceTrack);
@@ -1527,8 +1622,12 @@ function SmartReview({learnerId}) {
         effective_audio_name:p.audio_name||selectedDefaultAudio.name||null,
         has_default_pdf:!p.pdf&&!!dm.pdf,
         has_default_audio:!p.audio&&!!selectedDefaultAudio.url,
+        is_assigned:activeLinked.has(p.id),
       };
-    }).sort((a,b)=>(a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1);
+    }).sort((a,b)=>{
+      if(a.is_assigned!==b.is_assigned)return a.is_assigned?-1:1;
+      return (a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1;
+    });
     setQueue(ps);setLoading(false);
   }
   useEffect(()=>{load();},[learnerId]);
@@ -1558,7 +1657,19 @@ function SmartReview({learnerId}) {
   function daysSince(d){if(!d)return null;return Math.floor((Date.now()-new Date(d).getTime())/(1000*60*60*24));}
 
   if(loading) return <LoadingSpinner message="Loading review queue…"/>;
+  if(!overrideCap&&!sessionDone&&todayCount>=5) return <div style={{textAlign:"center",padding:"60px 20px"}}>
+    <div style={{fontSize:48,marginBottom:16}}>🎉</div>
+    <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:22,marginBottom:8}}>Daily review done!</h3>
+    <p style={{color:C.midGray,fontSize:15,marginBottom:24,fontFamily:"Raleway,sans-serif"}}>You reviewed {todayCount} cards today. Come back tomorrow!</p>
+    <Btn onClick={()=>setOverrideCap(true)} outline color={C.navy}>Review more anyway</Btn>
+  </div>;
   if(total===0) return <div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:48,marginBottom:16}}>📖</div><h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:20,marginBottom:8}}>No items to review yet</h3><p style={{color:C.midGray,fontSize:15,fontFamily:"Raleway,sans-serif"}}>Items appear here once marked In Progress or beyond.</p></div>;
+  if(!overrideCap&&todayCount>=5&&!sessionDone) return <div style={{textAlign:"center",padding:"60px 20px"}}>
+    <div style={{fontSize:48,marginBottom:16}}>🎉</div>
+    <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:22,marginBottom:8}}>Daily review complete!</h3>
+    <p style={{color:C.midGray,fontSize:15,marginBottom:24,fontFamily:"Raleway,sans-serif"}}>You've reviewed {todayCount} cards today. Come back tomorrow to keep your streak going.</p>
+    <Btn onClick={()=>setOverrideCap(true)} outline color={C.navy}>Review more anyway</Btn>
+  </div>;
   if(sessionDone) return <div style={{textAlign:"center",padding:"60px 20px"}}>
     <div style={{fontSize:56,marginBottom:16}}>🌟</div>
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:24,marginBottom:8}}>Review Complete!</h3>
@@ -2551,7 +2662,7 @@ export default function App() {
     </div>
 
     {showDing      &&<DingModal       onClose={()=>setShowDing(false)}/>}
-    {showSettings&&<SettingsModal learnerId={selectedLearner} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
+    {showSettings&&<SettingsModal learnerId={selectedLearner} instructorUser={instructorUser} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
     {showAddLearner&&<AddLearnerModal onAdd={l=>{
       const sorted=[...learners,l].sort((a,b)=>{if(!a.date_of_service)return 1;if(!b.date_of_service)return -1;return a.date_of_service<b.date_of_service?-1:1;});
       setLearners(sorted);setSelectedLearner(l.id);setShowAddLearner(false);
