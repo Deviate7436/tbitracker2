@@ -104,6 +104,7 @@ const DB = {
 
   // Prayers
   getPrayers: (lid) => sb(`prayers?learner_id=eq.${lid}&select=*&order=sort_order`),
+  getPrayer: async(id) => {const r=await sb(`prayers?id=eq.${id}&select=*`);return Array.isArray(r)?r[0]:null;},
   upsertPrayer: (p) => sb("prayers?on_conflict=id", "POST", p, {"Prefer":"resolution=merge-duplicates,return=representation"}),
   updatePrayer: (id, patch) => sb(`prayers?id=eq.${id}`, "PATCH", patch, {"Prefer":"return=representation"}),
   deletePrayer: (id) => sb(`prayers?id=eq.${id}`, "DELETE"),
@@ -947,6 +948,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
+  const [pageStatusOpen,setPageStatusOpen]=useState(false);
   const [showMedia,setShowMedia]=useState(null);
   const [showMultiPage,setShowMultiPage]=useState(false); // null | "pdf" | "audio"
   const [chatInput,setChatInput]=useState("");
@@ -1038,9 +1040,11 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           {(role==="learner"||role==="parent")&&<><StatusBadge status={prayer.status}/>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}{role==="learner"&&!simplified&&prayer.target_date&&<span style={{fontSize:12,color:C.navy,fontWeight:"700",fontFamily:"Raleway,sans-serif",whiteSpace:"nowrap",background:"#fff6e8",border:"1px solid #f2a54155",borderRadius:10,padding:"3px 8px"}}>🎯 Target: {prayer.target_date}</span>}</>}
         </div>
       </div>
-      {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"0 18px 12px"}}>
+      {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"0 18px 12px"}}>
+        {isLead&&prayer.pages&&prayer.pages.length>1&&<button onClick={()=>setPageStatusOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{pageStatusOpen?"▲ Page Status":"▼ Page Status"}</button>}
         <button onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
+      {pageStatusOpen&&role==="instructor"&&isLead&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate}/>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
         {/* Single media (used when pages.length <= 1) */}
         {(!prayer.pages||prayer.pages.length<=1)&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
@@ -1073,6 +1077,34 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
       </div>}
     </div>
   </>;
+}
+
+// ── Page Status Panel ──────────────────────────────────────────────────────
+function PageStatusPanel({prayer,onLinkUpdate}) {
+  const pages=prayer.pages||[];
+  async function setPageStatus(pid,status){
+    const updated=pages.map(p=>p.id===pid?{...p,status}:p);
+    await onLinkUpdate(prayer.id,{pages:updated});
+    // Roll up card status: Learned only if all pages Learned
+    const allLearned=updated.length>0&&updated.every(p=>p.status==="Learned");
+    if(allLearned&&prayer.status!=="Learned"){
+      await onLinkUpdate(prayer.id,{status:"Learned",completion_date:new Date().toISOString().split("T")[0]});
+    } else if(!allLearned&&prayer.status==="Learned"){
+      await onLinkUpdate(prayer.id,{status:"In Progress",completion_date:null});
+    }
+  }
+  return <div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#f0f7ff"}}>
+    <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13,marginBottom:10}}>Per-Page Status</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {pages.map((pg,i)=><div key={pg.id} style={{display:"flex",alignItems:"center",gap:10,background:"white",borderRadius:8,padding:"8px 12px",border:"1px solid #e9ecef"}}>
+        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13,minWidth:60}}>Page {i+1}</span>
+        <select value={pg.status||"Not Started"} onChange={e=>setPageStatus(pg.id,e.target.value)} style={{padding:"4px 10px",borderRadius:8,border:`1px solid ${STATUS_COLORS[pg.status||"Not Started"]}`,background:`${STATUS_COLORS[pg.status||"Not Started"]}18`,color:STATUS_COLORS[pg.status||"Not Started"],fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
+          {STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>)}
+    </div>
+    <p style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",margin:"10px 0 0",fontStyle:"italic"}}>Card shows "Learned" only when all pages are Learned.</p>
+  </div>;
 }
 
 // ── Multi-Page Editor ─────────────────────────────────────────────────────
@@ -1662,26 +1694,54 @@ function SmartReview({learnerId}) {
     const defaults={};
     (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={...d};});
     const activeLinked=new Set((assignments||[]).filter(a=>!a.done).flatMap(a=>a.linked_prayer_ids||[]));
-    const ps=(rows||[]).filter(p=>p.status!=="Not Started"&&!p.hidden_from_learner).map(p=>{
+    const items=[];
+    (rows||[]).filter(p=>!p.hidden_from_learner).forEach(p=>{
       const dm=defaults[dmKey(p.name,p.part)]||{};
       const selectedDefaultAudio=getDefaultAudioForVoice(dm,voiceTrack);
-      const isDue=!p.sr_due||p.sr_due<=today;
-      return {...p,
-        effective_pdf:p.pdf||dm.pdf||null,
-        effective_pdf_name:p.pdf_name||dm.pdf_name||null,
-        effective_audio:p.audio||selectedDefaultAudio.url||null,
-        effective_audio_name:p.audio_name||selectedDefaultAudio.name||null,
-        has_default_pdf:!p.pdf&&!!dm.pdf,
-        has_default_audio:!p.audio&&!!selectedDefaultAudio.url,
-        is_assigned:activeLinked.has(p.id),
-        is_due:isDue,
-      };
-    }).sort((a,b)=>{
-      // 1. Due before not-due
+      const multiPage=p.pages&&p.pages.length>1;
+      if(multiPage){
+        // Expand each page into its own review item
+        p.pages.forEach((pg,pgIdx)=>{
+          if((pg.status||"Not Started")==="Not Started")return;
+          const isDue=!pg.sr_due||pg.sr_due<=today;
+          items.push({
+            id:`${p.id}::page::${pg.id}`,
+            parent_id:p.id,
+            page_id:pg.id,
+            page_index:pgIdx,
+            is_page:true,
+            name:`${p.name} — Page ${pgIdx+1}`,
+            status:pg.status||"In Progress",
+            page:p.page,
+            effective_pdf:pg.pdf_url||null,
+            effective_pdf_name:pg.pdf_name||null,
+            effective_audio:pg.audio_url||null,
+            effective_audio_name:pg.audio_name||`${p.name} — Page ${pgIdx+1}`,
+            has_default_pdf:false,has_default_audio:false,
+            sr_ease:pg.sr_ease,sr_reps:pg.sr_reps,sr_interval:pg.sr_interval,sr_due:pg.sr_due,
+            is_assigned:activeLinked.has(p.id),
+            is_due:isDue,
+          });
+        });
+      } else {
+        if(p.status==="Not Started")return;
+        const isDue=!p.sr_due||p.sr_due<=today;
+        items.push({...p,
+          is_page:false,
+          effective_pdf:p.pdf||dm.pdf||null,
+          effective_pdf_name:p.pdf_name||dm.pdf_name||null,
+          effective_audio:p.audio||selectedDefaultAudio.url||null,
+          effective_audio_name:p.audio_name||selectedDefaultAudio.name||null,
+          has_default_pdf:!p.pdf&&!!dm.pdf,
+          has_default_audio:!p.audio&&!!selectedDefaultAudio.url,
+          is_assigned:activeLinked.has(p.id),
+          is_due:isDue,
+        });
+      }
+    });
+    const ps=items.sort((a,b)=>{
       if(a.is_due!==b.is_due)return a.is_due?-1:1;
-      // 2. Assigned before unassigned
       if(a.is_assigned!==b.is_assigned)return a.is_assigned?-1:1;
-      // 3. Soonest due date / oldest review first
       const aDue=a.sr_due||"0000";const bDue=b.sr_due||"0000";
       return aDue<bDue?-1:aDue>bDue?1:0;
     });
@@ -1695,9 +1755,18 @@ function SmartReview({learnerId}) {
   async function rateCard(rating){
     if(!current)return;
     const today=new Date().toISOString().split("T")[0];
-    // Compute SM-2 schedule and persist
+    // Compute SM-2 schedule and persist (per-page or per-card)
     const sched=sm2Schedule(current,rating,serviceDate);
-    await DB.updatePrayer(current.id,{last_reviewed:today,...sched});
+    if(current.is_page){
+      // Update the specific page inside parent's pages array
+      const parent=await DB.getPrayer(current.parent_id);
+      if(parent){
+        const updatedPages=(parent.pages||[]).map(pg=>pg.id===current.page_id?{...pg,...sched,last_reviewed:today}:pg);
+        await DB.updatePrayer(current.parent_id,{pages:updatedPages});
+      }
+    } else {
+      await DB.updatePrayer(current.id,{last_reviewed:today,...sched});
+    }
     const newItem={id:current.id,name:current.name,status:current.status,rating};
     const updated=[...reviewedItems,newItem];
     setReviewedItems(updated);setShowPdfModal(false);setShowAudioModal(false);
