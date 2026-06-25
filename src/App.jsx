@@ -1590,12 +1590,61 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   </div>;
 }
 
+// ── SM-2 Spaced Repetition (tuned for b\u0027nei mitzvah passages) ───────────
+// Quality: Again=2, Hard=3, Good=4, Easy=5
+function sm2Schedule(prayer, rating, serviceDate) {
+  const qMap={again:2,hard:3,good:4,easy:5};
+  const q=qMap[rating]||4;
+  let ease=prayer.sr_ease||2.5;
+  let reps=prayer.sr_reps||0;
+  let interval=prayer.sr_interval||0;
+
+  // Update ease factor (SM-2 formula, with tuned button deltas)
+  if(rating==="again") ease=ease-0.20;
+  else if(rating==="hard") ease=ease-0.15;
+  else if(rating==="easy") ease=ease+0.15;
+  // good: ease unchanged
+  if(ease<1.3) ease=1.3;
+
+  if(q<3){
+    // Again — reset
+    reps=0;
+    interval=0; // due again same/next day
+  } else {
+    reps=reps+1;
+    if(reps===1) interval=1;
+    else if(reps===2) interval=3;
+    else {
+      let mult=ease;
+      if(rating==="hard") mult=1.2;
+      else if(rating==="easy") mult=ease*1.3;
+      interval=Math.round(interval*mult);
+    }
+  }
+  if(interval<1&&q>=3) interval=1;
+
+  // Cap interval at service date — never schedule past the b\u0027nei mitzvah
+  let dueDate=new Date();
+  dueDate.setDate(dueDate.getDate()+interval);
+  if(serviceDate){
+    const svc=new Date(serviceDate+"T12:00:00");
+    if(dueDate>svc){
+      dueDate=svc;
+      const daysToSvc=Math.max(0,Math.ceil((svc-new Date())/(1000*60*60*24)));
+      interval=daysToSvc;
+    }
+  }
+  const dueStr=dueDate.toISOString().split("T")[0];
+  return {sr_ease:Math.round(ease*100)/100, sr_reps:reps, sr_interval:interval, sr_due:dueStr};
+}
+
 // ── Smart Review ───────────────────────────────────────────────────────────
 function SmartReview({learnerId}) {
   const {isMobile}=useBreakpoint();
   const [loading,setLoading]=useState(true);
   const [queue,setQueue]=useState([]);const [idx,setIdx]=useState(0);const [sessionDone,setSessionDone]=useState(false);const [reviewedItems,setReviewedItems]=useState([]);const [showPdfModal,setShowPdfModal]=useState(false);const [showAudioModal,setShowAudioModal]=useState(false);
   const [todayCount,setTodayCount]=useState(0);const [overrideCap,setOverrideCap]=useState(false);
+  const [serviceDate,setServiceDate]=useState(null);
 
   function dmKey(name,part){return `${name}|${part}`;}
 
@@ -1608,6 +1657,7 @@ function SmartReview({learnerId}) {
     ]);
     const todayReviewed=(sessions||[]).filter(s=>s.type==="smart_review"&&s.date===today).reduce((sum,s)=>(s.items?.length||0)+sum,0);
     setTodayCount(todayReviewed);
+    setServiceDate(learnerRow?.date_of_service||null);
     const voiceTrack=learnerRow?.voice_track||"lower";
     const defaults={};
     (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={...d};});
@@ -1615,6 +1665,7 @@ function SmartReview({learnerId}) {
     const ps=(rows||[]).filter(p=>p.status!=="Not Started"&&!p.hidden_from_learner).map(p=>{
       const dm=defaults[dmKey(p.name,p.part)]||{};
       const selectedDefaultAudio=getDefaultAudioForVoice(dm,voiceTrack);
+      const isDue=!p.sr_due||p.sr_due<=today;
       return {...p,
         effective_pdf:p.pdf||dm.pdf||null,
         effective_pdf_name:p.pdf_name||dm.pdf_name||null,
@@ -1623,10 +1674,16 @@ function SmartReview({learnerId}) {
         has_default_pdf:!p.pdf&&!!dm.pdf,
         has_default_audio:!p.audio&&!!selectedDefaultAudio.url,
         is_assigned:activeLinked.has(p.id),
+        is_due:isDue,
       };
     }).sort((a,b)=>{
+      // 1. Due before not-due
+      if(a.is_due!==b.is_due)return a.is_due?-1:1;
+      // 2. Assigned before unassigned
       if(a.is_assigned!==b.is_assigned)return a.is_assigned?-1:1;
-      return (a.last_reviewed||"0000")<(b.last_reviewed||"0000")?-1:1;
+      // 3. Soonest due date / oldest review first
+      const aDue=a.sr_due||"0000";const bDue=b.sr_due||"0000";
+      return aDue<bDue?-1:aDue>bDue?1:0;
     });
     setQueue(ps);setLoading(false);
   }
@@ -1638,15 +1695,19 @@ function SmartReview({learnerId}) {
   async function rateCard(rating){
     if(!current)return;
     const today=new Date().toISOString().split("T")[0];
-    await DB.updatePrayer(current.id,{last_reviewed:today});
+    // Compute SM-2 schedule and persist
+    const sched=sm2Schedule(current,rating,serviceDate);
+    await DB.updatePrayer(current.id,{last_reviewed:today,...sched});
     const newItem={id:current.id,name:current.name,status:current.status,rating};
     const updated=[...reviewedItems,newItem];
     setReviewedItems(updated);setShowPdfModal(false);setShowAudioModal(false);
     if(rating==="again"||rating==="hard"){
-      // Again: move to next position; Hard: move to middle of remaining queue
+      // Again: re-show near the end of session; Hard: re-show mid-session
       const remaining=[...queue.slice(0,idx),...queue.slice(idx+1)];
-      const insertAt=rating==="again"?idx:Math.min(idx+Math.ceil((remaining.length-idx)/2),remaining.length);
-      const newQ=[...remaining.slice(0,insertAt),current,...remaining.slice(insertAt)];
+      const insertAt=rating==="again"
+        ?remaining.length
+        :Math.min(idx+Math.ceil((remaining.length-idx)/2),remaining.length);
+      const newQ=[...remaining.slice(0,insertAt),{...current,...sched},...remaining.slice(insertAt)];
       setQueue(newQ);
     } else if(idx+1>=queue.length){
       const session={id:genId(),learner_id:learnerId,date:today,type:"smart_review",notes:`Smart Review — ${updated.length} item${updated.length!==1?"s":""} reviewed`,items:updated,duration:null};
