@@ -650,6 +650,35 @@ function PdfCanvasDocument({ url, title }) {
   </div>;
 }
 
+// ── Multi-Page Viewer ─────────────────────────────────────────────────────
+function MultiPageViewer({pages,title,onClose}) {
+  const [pageIdx,setPageIdx]=useState(0);
+  const page=pages[pageIdx]||{};
+  const total=pages.length;
+  return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.85)",zIndex:3000,display:"flex",flexDirection:"column"}}>
+    <div style={{background:C.navy,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:"white",fontSize:15,flex:1}}>{title}</span>
+      <span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:"rgba(255,255,255,0.7)"}}>Page {pageIdx+1} of {total}</span>
+      <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
+    </div>
+    {page.audio_url&&<div style={{background:"#0a2a4a",padding:"8px 16px",flexShrink:0}}>
+      <AudioPlayer url={page.audio_url} name={page.audio_name||`${title} — Page ${pageIdx+1}`}/>
+    </div>}
+    <div style={{flex:1,overflow:"hidden"}}>
+      {page.pdf_url
+        ?<iframe src={page.pdf_url} style={{width:"100%",height:"100%",border:"none"}} title={`Page ${pageIdx+1}`}/>
+        :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"rgba(255,255,255,0.5)",fontFamily:"Raleway,sans-serif"}}>No PDF for this page</div>}
+    </div>
+    <div style={{background:C.navy,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+      <button onClick={()=>setPageIdx(i=>Math.max(0,i-1))} disabled={pageIdx===0} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===0?"#1a3a5c":"white",color:pageIdx===0?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===0?"not-allowed":"pointer"}}>← Prev</button>
+      <div style={{display:"flex",gap:6}}>
+        {pages.map((_,i)=><button key={i} onClick={()=>setPageIdx(i)} style={{width:28,height:28,borderRadius:"50%",border:"none",background:i===pageIdx?"white":"rgba(255,255,255,0.2)",color:i===pageIdx?C.navy:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:12,cursor:"pointer"}}>{i+1}</button>)}
+      </div>
+      <button onClick={()=>setPageIdx(i=>Math.min(total-1,i+1))} disabled={pageIdx===total-1} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===total-1?"#1a3a5c":"white",color:pageIdx===total-1?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===total-1?"not-allowed":"pointer"}}>Next →</button>
+    </div>
+  </div>;
+}
+
 function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
   const hasAudio=!!audioUrl;
   const displayTitle=title||name||"PDF";
@@ -1523,6 +1552,20 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
     </div>
   </div>;
 }
+// ── Linked Prayers Selector ────────────────────────────────────────────────
+function LinkedPrayersSelector({learnerId,selected,onChange}) {
+  const [prayers,setPrayers]=useState([]);
+  useEffect(()=>{if(learnerId)DB.getPrayers(learnerId).then(r=>setPrayers((r||[]).filter(p=>!p.hidden_from_learner)));},[learnerId]);
+  if(!prayers.length) return null;
+  function toggle(id){onChange(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);}
+  return <div style={{marginBottom:10}}>
+    <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"700",color:C.navy,marginBottom:6}}>Link to prayers (optional)</div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      {prayers.map(p=><button key={p.id} onClick={()=>toggle(p.id)} style={{padding:"3px 10px",borderRadius:20,border:`1.5px solid ${selected.includes(p.id)?C.blue:"#dee2e6"}`,background:selected.includes(p.id)?C.lightBlue:"white",color:selected.includes(p.id)?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontSize:11,fontWeight:"700",cursor:"pointer"}}>{p.name}</button>)}
+    </div>
+  </div>;
+}
+
 function Assignments({learnerId,role,learner,isLead=true}) {
   const {isMobile}=useBreakpoint();
   const [assignments,setAssignments]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
