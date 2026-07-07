@@ -1058,7 +1058,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
               </>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
-            {role==="parent"&&(effectivePdfUrl||effectiveAudioUrl)&&<button onClick={()=>effectivePdfUrl?setShowMedia("pdf"):setShowMedia("audio")} style={{padding:"5px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
+            {role==="parent"&&(effectivePdf||effectiveAudio)&&<button onClick={()=>effectivePdf?setShowMedia("pdf"):setShowMedia("audio")} style={{padding:"5px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
             {hasAudio&&!hasPdf&&!simplified
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
