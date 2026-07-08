@@ -2756,7 +2756,7 @@ export default function App() {
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":"Team Member"}</span>}
         {instructorUser&&instructorUser.role==="team"&&<a href="mailto:cantorchilds@tbiport.org?subject=Question from Team Member" style={{padding:isMobile?"5px 8px":"6px 12px",borderRadius:8,border:`1px solid ${C.blue}55`,background:C.lightBlue,color:C.blue,fontSize:isMobile?11:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",flexShrink:0}}>✉ Contact Cantor David</a>}
-        {role==="instructor"&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
+        {role==="instructor"&&isLead&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
         <button onClick={signOut} style={{background:"none",border:"1px solid #dee2e6",color:C.midGray,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Sign Out</button>
       </div>
     </div>
@@ -2838,7 +2838,7 @@ export default function App() {
     </div>
 
     {showDing      &&<DingModal       onClose={()=>setShowDing(false)}/>}
-    {showSettings&&<SettingsModal learnerId={selectedLearner} instructorUser={instructorUser} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
+    {showSettings&&role==="instructor"&&isLead&&<SettingsModal learnerId={selectedLearner} instructorUser={instructorUser} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
     {showAddLearner&&<AddLearnerModal onAdd={l=>{
       const sorted=[...learners,l].sort((a,b)=>{if(!a.date_of_service)return 1;if(!b.date_of_service)return -1;return a.date_of_service<b.date_of_service?-1:1;});
       setLearners(sorted);setSelectedLearner(l.id);setShowAddLearner(false);
