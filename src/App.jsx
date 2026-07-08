@@ -246,6 +246,84 @@ async function sendAssignmentEmail({learner, assignment}) {
   }
 }
 
+const ATT_ROW_DEFS = [["fri1","Friday #1"],["fri2","Friday #2"],["fri3","Friday #3"],["fri4","Friday #4"],["sat1","Saturday #1"],["sat2","Saturday #2"],["sat3","Saturday #3"],["sat4","Saturday #4"],["sat5","Saturday #5"],["sat6","Saturday #6"]];
+
+function isoDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate()-n);
+  return d.toISOString().split("T")[0];
+}
+
+async function buildMonthlyUpdateBundle(learner, sinceISO) {
+  const [prayers, assignments, attRows, sessions] = await Promise.all([
+    DB.getPrayers(learner.id),
+    DB.getAssignments(learner.id),
+    DB.getAttendance(learner.id),
+    DB.getSessions(learner.id),
+  ]);
+  const att = (attRows||[])[0] || {};
+  const attDone = ATT_ROW_DEFS.filter(([k])=>att[k]).length;
+  const attThisMonth = ATT_ROW_DEFS.filter(([k])=>att[k]&&att[k]>=sinceISO);
+  const daysPracticed = new Set((sessions||[]).filter(s=>s.date&&s.date>=sinceISO).map(s=>s.date)).size;
+  const sortedPrayers = (prayers||[]).slice().sort((a,b)=>(a.part-b.part)||((a.sort_order??0)-(b.sort_order??0)));
+  return {learner, prayers:sortedPrayers, assignments:assignments||[], attDone, attThisMonth, daysPracticed};
+}
+
+function buildMonthlyUpdateEmail({learner,prayers,assignments,attDone,attThisMonth,daysPracticed}, periodLabel) {
+  const prayerRows = prayers.length
+    ? prayers.map(p=>`<li style="margin-bottom:4px;font-size:14px;color:#444;"><strong>${p.name}:</strong> ${p.status}</li>`).join("")
+    : `<li style="font-size:14px;color:#888;font-style:italic;">No prayers/readings on file.</li>`;
+  const assignmentRows = assignments.length
+    ? assignments.map(a=>`<li style="margin-bottom:4px;font-size:14px;color:#444;">${a.done?"✅":"⬜"} ${a.text}</li>`).join("")
+    : `<li style="font-size:14px;color:#888;font-style:italic;">No assignments on file.</li>`;
+  const attThisMonthHtml = attThisMonth.length
+    ? attThisMonth.map(([,label])=>`<li style="font-size:14px;color:#444;">${label}</li>`).join("")
+    : `<li style="font-size:14px;color:#888;font-style:italic;">No new services attended this month.</li>`;
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+      <h2 style="color:#1a3a5c;">${learner.name} — Monthly Progress Update</h2>
+      <p style="color:#6c757d;font-size:13px;margin:0 0 16px;">${periodLabel}</p>
+      <div style="background:#f8f9fa;border-radius:8px;padding:18px;margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;color:#1a3a5c;font-size:15px;">Prayers &amp; Readings</h3>
+        <ul style="margin:0;padding-left:20px;">${prayerRows}</ul>
+      </div>
+      <div style="background:#f8f9fa;border-radius:8px;padding:18px;margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;color:#1a3a5c;font-size:15px;">Assignments</h3>
+        <ul style="margin:0;padding-left:20px;">${assignmentRows}</ul>
+      </div>
+      <div style="background:#f8f9fa;border-radius:8px;padding:18px;margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;color:#1a3a5c;font-size:15px;">Service Attendance</h3>
+        <p style="margin:0 0 8px;font-size:14px;color:#444;">${attDone}/10 total services attended.</p>
+        <p style="margin:0 0 4px;font-size:13px;color:#6c757d;">Attended this month:</p>
+        <ul style="margin:0;padding-left:20px;">${attThisMonthHtml}</ul>
+      </div>
+      <div style="background:#f8f9fa;border-radius:8px;padding:18px;">
+        <h3 style="margin:0 0 8px;color:#1a3a5c;font-size:15px;">Practice</h3>
+        <p style="margin:0;font-size:14px;color:#444;">${daysPracticed} day${daysPracticed!==1?"s":""} practiced this month.</p>
+      </div>
+      <p style="color:#6c757d;font-size:12px;margin-top:24px;">Temple Beth Israel Progress Tracker</p>
+    </div>`;
+  return {subject:`Monthly Progress Update — ${learner.name}`, html};
+}
+
+async function sendMonthlyUpdateEmail({learner, subject, html}) {
+  const replyTo = instructorEmails(learner.instructor);
+  const emails = [learner.email1, learner.email2, learner.email3].filter(Boolean);
+  if(!emails.length) return {ok:false, error:"No email addresses on file."};
+  try {
+    const res = await fetch("/.netlify/functions/send-email", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({to:emails, replyTo, subject, html}),
+    });
+    const data = await res.json();
+    if(!res.ok) return {ok:false, error:data.error||"Email failed."};
+    return {ok:true};
+  } catch(e) {
+    return {ok:false, error:"Network error sending email."};
+  }
+}
+
 const DEFAULT_PART_LABELS = {
   1:"Part 1", 2:"Part 2",
   3:"Part 3", 4:"Additional Learning",
@@ -921,6 +999,7 @@ function MediaLibraryPanel({instructorUser}) {
 function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArchived,setShowArchived,loadArchivedLearners,formatServiceDate,handleRestore,setDeleteConfirm,instructorUser=null}) {
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});const [defaultMediaMap,setDefaultMediaMap]=useState({});
+  const [showMonthlyUpdates,setShowMonthlyUpdates]=useState(false);
   function dmKey(name,part){return `${name}|${part}`;}
   async function load(){
     if(!learnerId){setLoading(false);return;}
@@ -943,6 +1022,13 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
       </div>
       <div style={{padding:22,display:"flex",flexDirection:"column",gap:14}}>
         {!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>} 
+        <div style={{background:"white",borderRadius:14,padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:16}}>✉️</span>
+            <span style={{fontWeight:"800",color:C.navy,fontSize:15,fontFamily:"Raleway,sans-serif"}}>Monthly Parent Updates</span>
+          </div>
+          <Btn small color={C.blue} onClick={()=>setShowMonthlyUpdates(true)}>Generate Updates</Btn>
+        </div>
         <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
           <button onClick={async()=>{if(!showArchived){await loadArchivedLearners?.();}setShowArchived?.(!showArchived);}}
             style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
@@ -968,6 +1054,98 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
           </div>}
         </div>
       </div>
+    </div>
+    {showMonthlyUpdates&&<MonthlyUpdatesModal onClose={()=>setShowMonthlyUpdates(false)}/>}
+  </div>;
+}
+
+// ── Monthly Parent Updates ───────────────────────────────────────────────────
+function MonthlyUpdatesModal({onClose}) {
+  const {isMobile}=useBreakpoint();
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState(null);
+  const [messages,setMessages]=useState([]); // {learnerId,name,to,subject,html,skip,status}
+  const [selectedId,setSelectedId]=useState(null);
+  const [sending,setSending]=useState(false);
+  const sinceISO = isoDaysAgo(30);
+  const periodLabel = `Update covering ${sinceISO} to ${new Date().toISOString().split("T")[0]}`;
+
+  async function load(){
+    setLoading(true);setError(null);
+    try{
+      const learners = (await DB.getActiveLearners())||[];
+      const withEmail = learners.filter(l=>l.email1||l.email2||l.email3);
+      const built = await Promise.all(withEmail.map(async l=>{
+        const bundle = await buildMonthlyUpdateBundle(l, sinceISO);
+        const {subject,html} = buildMonthlyUpdateEmail(bundle, periodLabel);
+        const to = [l.email1,l.email2,l.email3].filter(Boolean);
+        return {learnerId:l.id, learner:l, name:l.name, to, subject, html, skip:false, status:undefined};
+      }));
+      setMessages(built);
+      setSelectedId(built[0]?.learnerId||null);
+    }catch(e){console.error(e);setError("Could not build monthly updates.");}
+    setLoading(false);
+  }
+  useEffect(()=>{load();},[]);
+
+  function toggleSkip(id){setMessages(prev=>prev.map(m=>m.learnerId===id?{...m,skip:!m.skip}:m));}
+
+  async function sendAll(){
+    setSending(true);
+    const toSend = messages.filter(m=>!m.skip);
+    for(const m of toSend){
+      setMessages(prev=>prev.map(x=>x.learnerId===m.learnerId?{...x,status:"sending"}:x));
+      const result = await sendMonthlyUpdateEmail({learner:m.learner, subject:m.subject, html:m.html});
+      setMessages(prev=>prev.map(x=>x.learnerId===m.learnerId?{...x,status:result.ok?"sent":`error:${result.error}`}:x));
+    }
+    setSending(false);
+  }
+
+  const selected = messages.find(m=>m.learnerId===selectedId);
+  const sendableCount = messages.filter(m=>!m.skip).length;
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.78)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:5100,padding:16}}>
+    <div style={{background:C.cream,borderRadius:20,width:"100%",maxWidth:1040,maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 80px rgba(0,0,0,0.4)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"18px 22px",background:"white",borderBottom:"1px solid #e9ecef",borderRadius:"20px 20px 0 0"}}>
+        <div>
+          <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:20,margin:0}}>Monthly Parent Updates</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{periodLabel}</p>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.midGray,fontSize:26,cursor:"pointer"}}>✕</button>
+      </div>
+      {loading?<div style={{padding:40}}><LoadingSpinner message="Building updates…"/></div>
+      :error?<div style={{padding:40}}><ErrorBanner message={error} onRetry={load}/></div>
+      :messages.length===0?<div style={{padding:40}}><p style={{fontFamily:"Raleway,sans-serif",color:C.midGray,fontStyle:"italic"}}>No learners with a parent email on file.</p></div>
+      :<div style={{display:"flex",flex:1,overflow:"hidden",flexDirection:isMobile?"column":"row"}}>
+        <div style={{width:isMobile?"100%":300,flexShrink:0,borderRight:isMobile?"none":"1px solid #e9ecef",borderBottom:isMobile?"1px solid #e9ecef":"none",overflowY:"auto",padding:"12px 0",maxHeight:isMobile?220:"none"}}>
+          {messages.map(m=><div key={m.learnerId} onClick={()=>setSelectedId(m.learnerId)}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"10px 18px",cursor:"pointer",background:selectedId===m.learnerId?C.lightBlue:"transparent",opacity:m.skip?0.5:1}}>
+            <input type="checkbox" checked={!m.skip} onClick={e=>e.stopPropagation()} onChange={()=>toggleSkip(m.learnerId)} style={{flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+              <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.to.join(", ")}</div>
+            </div>
+            {m.status==="sending"&&<span style={{fontSize:11,color:C.gold,fontWeight:700}}>…</span>}
+            {m.status==="sent"&&<span style={{fontSize:11,color:C.green,fontWeight:700}}>✓</span>}
+            {typeof m.status==="string"&&m.status.startsWith("error")&&<span style={{fontSize:11,color:"#c0392b",fontWeight:700}}>!</span>}
+          </div>)}
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:22}}>
+          {selected?<>
+            <div style={{marginBottom:12,fontFamily:"Raleway,sans-serif",fontSize:13,color:C.midGray}}>
+              <strong style={{color:C.navy}}>To:</strong> {selected.to.join(", ")||"—"}<br/>
+              <strong style={{color:C.navy}}>Subject:</strong> {selected.subject}
+            </div>
+            <div style={{background:"white",borderRadius:12,padding:20,border:"1px solid #e9ecef"}}
+              dangerouslySetInnerHTML={{__html:selected.html}}/>
+            {typeof selected.status==="string"&&selected.status.startsWith("error")&&<p style={{color:"#c0392b",fontSize:12,marginTop:8,fontFamily:"Raleway,sans-serif"}}>{selected.status.replace("error:","")}</p>}
+          </>:<p style={{fontFamily:"Raleway,sans-serif",color:C.midGray,fontStyle:"italic"}}>Select a learner to preview their update.</p>}
+        </div>
+      </div>}
+      {!loading&&!error&&messages.length>0&&<div style={{padding:"14px 22px",borderTop:"1px solid #e9ecef",display:"flex",justifyContent:"space-between",alignItems:"center",background:"white",borderRadius:"0 0 20px 20px"}}>
+        <span style={{fontFamily:"Raleway,sans-serif",fontSize:13,color:C.midGray}}>{sendableCount} of {messages.length} selected</span>
+        <Btn onClick={sendAll} color={C.blue} disabled={sending||sendableCount===0}>{sending?"Sending…":`Send ${sendableCount} Update${sendableCount!==1?"s":""}`}</Btn>
+      </div>}
     </div>
   </div>;
 }
