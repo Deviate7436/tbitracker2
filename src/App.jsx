@@ -1640,7 +1640,7 @@ function PracticeSessions({learnerId,role}) {
 }
 
 // ── Assignment Row ─────────────────────────────────────────────────────────
-function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveAssignment, onUpdateSubtasks, onEmail, emailStatus}) {
+function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRemove, onSaveAssignment, onUpdateSubtasks, onEmail, emailStatus}) {
   const [editing,setEditing]=useState(false);
   const [editDate,setEditDate]=useState(a.date||"");
   const [editText,setEditText]=useState(a.text||"");
@@ -1649,6 +1649,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
   const subs = a.subtasks||[];
   const subDone = subs.filter(s=>s.done).length;
   const eStatus = emailStatus[a.id];
+  const canManage = role==="instructor"&&isLead;
 
   useEffect(()=>{
     if(!editing){
@@ -1676,11 +1677,11 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
 
   return <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)",position:"relative"}}>
     <div style={{position:"absolute",top:8,right:10,display:"flex",alignItems:"center",gap:6}}>
-      {role==="instructor"&&<button onClick={()=>setEditing(v=>!v)} style={cornerButton}>{editing?"Cancel":"Edit"}</button>}
-      {role==="instructor"&&<button onClick={()=>onRemove(a.id)} style={{...cornerButton,fontSize:16,lineHeight:1,color:"#bbb"}}>✕</button>}
+      {canManage&&<button onClick={()=>setEditing(v=>!v)} style={cornerButton}>{editing?"Cancel":"Edit"}</button>}
+      {canManage&&<button onClick={()=>onRemove(a.id)} style={{...cornerButton,fontSize:16,lineHeight:1,color:"#bbb"}}>✕</button>}
     </div>
     <div style={{display:"flex",alignItems:"flex-start",gap:12,paddingRight:role==="instructor"?70:0}}>
-      {(()=>{const subs=a.subtasks||[];const allSubsDone=subs.length===0||subs.every(s=>s.done);return <input type="checkbox" checked={a.done} onChange={()=>allSubsDone&&onToggle(a.id,a.done)} disabled={!allSubsDone} title={!allSubsDone?"Complete all subtasks first":""} style={{width:18,height:18,cursor:allSubsDone?"pointer":"not-allowed",accentColor:C.blue,marginTop:2,flexShrink:0,opacity:allSubsDone?1:0.35}}/>;})()}
+      {(()=>{const subs=a.subtasks||[];const allSubsDone=subs.length===0||subs.every(s=>s.done);const interactive=allSubsDone&&canManage;return <input type="checkbox" checked={a.done} onChange={()=>interactive&&onToggle(a.id,a.done)} disabled={!interactive} title={!allSubsDone?"Complete all subtasks first":!canManage?"Only lead instructors can mark assignments complete":""} style={{width:18,height:18,cursor:interactive?"pointer":"not-allowed",accentColor:C.blue,marginTop:2,flexShrink:0,opacity:interactive?1:0.35}}/>;})()}
       <div style={{flex:1,minWidth:0}}>
         {!editing&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:subs.length>0?8:0}}>
@@ -1694,7 +1695,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
               <span style={{flex:1,fontSize:13,color:s.done?C.midGray:C.navy,textDecoration:s.done?"line-through":"none",fontFamily:"Raleway,sans-serif"}}>{s.text}</span>
             </div>)}
           </div>}
-          {role==="instructor"&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:6}}>
+          {canManage&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:6}}>
             {hasEmails&&<>
               {eStatus==="sending"&&<span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>Sending…</span>}
               {eStatus==="sent"&&<span style={{fontSize:12,color:C.green,fontFamily:"Raleway,sans-serif"}}>✓ Sent!</span>}
@@ -1705,7 +1706,7 @@ function AssignmentRow({a, role, learner, hasEmails, onToggle, onRemove, onSaveA
           </div>}
         </>}
 
-        {editing&&role==="instructor"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {editing&&canManage&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div style={{display:"grid",gridTemplateColumns:"150px 1fr",gap:8}}>
             <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...IS,fontSize:13,padding:"6px 9px"}}/>
             <input value={editText} onChange={e=>setEditText(e.target.value)} placeholder="Write assignment here" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
@@ -1833,7 +1834,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
       ?<p style={{color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No assignments yet.</p>
       :<div style={{display:"flex",flexDirection:"column",gap:10}}>
         {assignments.map(a=><AssignmentRow
-          key={a.id} a={a} role={role} learner={learner}
+          key={a.id} a={a} role={role} isLead={isLead} learner={learner}
           hasEmails={hasEmails} emailStatus={emailStatus}
           onToggle={toggle} onRemove={setConfirmId}
           onSaveAssignment={saveAssignment} onUpdateSubtasks={updateSubtasks}
