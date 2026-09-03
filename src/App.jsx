@@ -1555,10 +1555,10 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
     return pp.slice().sort(defaultSort);
   }
   const HAFTARAH_CARD_NAMES=["Haftarah Reading","Haftarah Trope"];
-  function getSortedGroup(predicate) {
+  function getSortedGroup(predicate, exemptFromHideNotStarted=false) {
     let pp=prayerList.filter(predicate);
     if(role==="learner") pp=pp.filter(p=>!p.hidden_from_learner);
-    if(hideNotStarted&&role==="learner") pp=pp.filter(p=>p.status!=="Not Started");
+    if(hideNotStarted&&role==="learner"&&!exemptFromHideNotStarted) pp=pp.filter(p=>p.status!=="Not Started");
     if(role==="learner"){
       const rank=s=>s==="In Progress"?0:s==="Needs Review"?1:s==="Learned"?2:3;
       return pp.slice().sort((a,b)=>rank(a.status)-rank(b.status));
@@ -1567,7 +1567,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   }
   const isRSLearner=currentLearner?.category==="rs_learner";
   const useRSLayout=isRSLearner&&(role==="learner"||role==="parent"||(role==="instructor"&&!isLead));
-  const haftarahPrayers=useRSLayout?getSortedGroup(p=>HAFTARAH_CARD_NAMES.includes(p.name)):[];
+  const haftarahPrayers=useRSLayout?getSortedGroup(p=>HAFTARAH_CARD_NAMES.includes(p.name), true):[];
   const moreLearningPrayers=useRSLayout?getSortedGroup(p=>!HAFTARAH_CARD_NAMES.includes(p.name)):[];
 
   async function handleStatusChange(id,status) {
@@ -3196,7 +3196,7 @@ export default function App() {
         {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":"Team Member"}</span>}
         {instructorUser&&instructorUser.role==="team"&&<a href="mailto:cantorchilds@tbiport.org?subject=Question from Team Member" style={{padding:isMobile?"5px 8px":"6px 12px",borderRadius:8,border:`1px solid ${C.blue}55`,background:C.lightBlue,color:C.blue,fontSize:isMobile?11:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",flexShrink:0}}>✉ Contact Cantor David</a>}
         {role==="instructor"&&isLead&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
-        {role==="instructor"&&instructorUser?.role==="team"&&<button onClick={()=>setShowTutorial(true)} style={{background:"none",border:"1px solid #dee2e6",color:C.navy,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>❓ Help</button>}
+        {role==="instructor"&&instructorUser?.role==="team"&&<button onClick={()=>setShowTutorial(true)} style={{background:"none",border:"1px solid #dee2e6",color:C.navy,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>❓ Tutorial</button>}
         <button onClick={signOut} style={{background:"none",border:"1px solid #dee2e6",color:C.midGray,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Sign Out</button>
       </div>
     </div>
@@ -3251,17 +3251,17 @@ export default function App() {
       {showNavTabs&&(role==="instructor"
         ?<div style={{marginBottom:20}}>
           <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-            {[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"}].map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 140px",padding:isMobile?"11px 12px":"13px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"800",fontSize:isMobile?14:16,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
+            {[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"}].filter(t=>!isRSActive||t.id==="prayers").map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 140px",padding:isMobile?"11px 12px":"13px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"800",fontSize:isMobile?14:16,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {[{id:"services",label:"🕍 Shabbat Attendance"}].map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 100px",padding:isMobile?"7px 10px":"8px 14px",borderRadius:8,border:`1.5px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.lightBlue:"white",color:activeTab===t.id?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
+            {!isRSActive&&[{id:"services",label:"🕍 Shabbat Attendance"}].map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 100px",padding:isMobile?"7px 10px":"8px 14px",borderRadius:8,border:`1.5px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.lightBlue:"white",color:activeTab===t.id?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
           </div>
         </div>
         :<div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
           {tabs.map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{padding:isMobile?"8px 10px":"8px 12px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
         </div>
       )}
-      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
+      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&!isRSActive&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
 
       {(selectedLearner||(role==="parent"&&learnerId))&&<>
         {activeTab==="home"&&role==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
