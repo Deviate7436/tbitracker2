@@ -177,7 +177,7 @@ const DB = {
 const C = {
   blue:"#1B9AD6", darkBlue:"#0A6FA8", green:"#5EB85E", darkGreen:"#3D8B3D",
   lightBlue:"#E8F5FC", cream:"#f8f9fa", navy:"#1a3a5c", midGray:"#6c757d",
-  lightGray:"#f0f2f5", red:"#dc3545", gold:"#F5A623", purple:"#6b4fa0", forestGreen:"#1E5631",
+  lightGray:"#f0f2f5", red:"#dc3545", gold:"#F5A623", purple:"#6b4fa0", forestGreen:"#1E5631", lightGreen:"#e3f3e8",
 };
 
 const INSTRUCTOR_PASSWORD = "tbi";
@@ -2292,9 +2292,9 @@ function ParentHeaderCard({learner,isMobile,formatServiceDate}) {
         <a href="https://docs.google.com/document/d/12jHD6po6KJkZic_GymbUnPi0NO_pUOQ9ajiPR6EH8WA/edit?usp=sharing" target="_blank" rel="noopener noreferrer" style={linkBtn}>📅 Important Dates</a>
         {learner.bnei_mitzvah_agreement_url&&<a href={learner.bnei_mitzvah_agreement_url} target="_blank" rel="noopener noreferrer" style={linkBtn}>📄 B'nei Mitzvah Agreement</a>}
       </div>
-      {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
-        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8,marginTop:1}}>until service</div>
+      {cdText&&<div style={{background:learner.category==="rs_learner"?C.lightGreen:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:learner.category==="rs_learner"?C.forestGreen:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:learner.category==="rs_learner"?C.forestGreen:C.blue,opacity:0.8,marginTop:1}}>until service</div>
       </div>}
     </div>
   </div>;
@@ -2324,9 +2324,9 @@ function LearnerHeaderCard({learner,isMobile,formatServiceDate}) {
         <div style={LS}>Parashah</div>
         <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{learner.parashah}</div>
       </div>}
-      {cdText&&<div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0,marginLeft:"auto"}}>
-        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
-        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8,marginTop:1}}>until your service</div>
+      {cdText&&<div style={{background:learner.category==="rs_learner"?C.lightGreen:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0,marginLeft:"auto"}}>
+        <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:learner.category==="rs_learner"?C.forestGreen:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
+        <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:learner.category==="rs_learner"?C.forestGreen:C.blue,opacity:0.8,marginTop:1}}>until your service</div>
       </div>}
     </div>
   </div>;
@@ -2365,7 +2365,7 @@ function LearnerNameEditor({l,isMobile,onSave,formatLastSignedIn}) {
       <button onClick={saveName} disabled={saving} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:saving?"not-allowed":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
       <button onClick={()=>{setNameDraft(l.name||"");setEditingName(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
     </div>:<div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:categoryColor(l.category),fontSize:isMobile?17:18}}>{l.name}</span>
+      <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</span>
       <button onClick={()=>setEditingName(true)} style={editBtn}>edit</button>
     </div>}
     <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2,marginBottom:8}}>Last signed in: {formatLastSignedIn(l.last_signed_in_at)}</div>
@@ -2484,7 +2484,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
     <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
       {isLead
         ?<LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
-        :<div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:categoryColor(l.category),fontSize:isMobile?18:22}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:13,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{l.hebrew_name}</div>}<div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2}}>Last signed in: {l.last_signed_in_at?new Date(l.last_signed_in_at).toLocaleDateString():"Never"}</div></div>}
+        :<div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?18:22}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:13,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{l.hebrew_name}</div>}<div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2}}>Last signed in: {l.last_signed_in_at?new Date(l.last_signed_in_at).toLocaleDateString():"Never"}</div></div>}
       {isLead
         ?<LearnerServiceInfoEditor l={l} formatServiceDate={formatServiceDate} onSave={onSave}/>
         :<div>{l.date_of_service&&<div><div style={LS}>Date of Service</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{l.date_of_service}</div></div>}{l.parashah&&<div style={{marginTop:4}}><div style={LS}>Parashah</div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:13}}>{l.parashah}</div></div>}</div>}
@@ -2493,9 +2493,9 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
         const days=Math.ceil((new Date(l.date_of_service+"T12:00:00")-new Date())/(1000*60*60*24));
         if(days<=0)return null;
         const txt=days>90?`${Math.floor(days/30)}mo`:days>30?`${Math.floor(days/7)}w`:`${days}d`;
-        return <div style={{background:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
-          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:18,lineHeight:1}}>{txt}</div>
-          <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8}}>until service</div>
+        return <div style={{background:l.category==="rs_learner"?C.lightGreen:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
+          <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:l.category==="rs_learner"?C.forestGreen:C.blue,fontSize:18,lineHeight:1}}>{txt}</div>
+          <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:l.category==="rs_learner"?C.forestGreen:C.blue,opacity:0.8}}>until service</div>
         </div>;
       })()}
       {isLead&&<button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>}
@@ -3143,7 +3143,7 @@ export default function App() {
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
               style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`2px solid ${C.blue}`,background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",appearance:"none",paddingRight:32}}>
               <option value="" disabled>— Select a learner —</option>
-              {learners.map(l=><option key={l.id} value={l.id} style={{color:categoryColor(l.category)}}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
+              {learners.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
             </select>
             <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:C.midGray}}>▾</span>
           </div>
