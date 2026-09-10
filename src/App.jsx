@@ -1148,7 +1148,7 @@ function InstructorsPanel({open,onToggle}) {
           {editingId===r.id?
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               <input value={editRow.name} onChange={e=>setEditRow(v=>({...v,name:e.target.value}))} placeholder="Name" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
-              <input value={editRow.access_key} onChange={e=>setEditRow(v=>({...v,access_key:e.target.value.toUpperCase()}))} placeholder="Access key" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+              <input value={editRow.access_key} onChange={e=>setEditRow(v=>({...v,access_key:e.target.value.toUpperCase()}))} placeholder="Passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
               <input value={editRow.email} onChange={e=>setEditRow(v=>({...v,email:e.target.value}))} placeholder="Email" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
               <select value={editRow.role} onChange={e=>setEditRow(v=>({...v,role:e.target.value}))} style={{...IS,fontSize:13,padding:"6px 9px"}}>
                 <option value="team">Team Member</option>
@@ -1176,7 +1176,7 @@ function InstructorsPanel({open,onToggle}) {
         {!showAdd?<Btn small color={C.blue} style={{marginTop:12}} onClick={()=>setShowAdd(true)}>+ Add Instructor</Btn>:
           <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:12,padding:"12px",background:"#fafbfc",borderRadius:10,border:"1px solid #e9ecef"}}>
             <input value={newRow.name} onChange={e=>setNewRow(v=>({...v,name:e.target.value}))} placeholder="Name" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
-            <input value={newRow.access_key} onChange={e=>setNewRow(v=>({...v,access_key:e.target.value.toUpperCase()}))} placeholder="Access key" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+            <input value={newRow.access_key} onChange={e=>setNewRow(v=>({...v,access_key:e.target.value.toUpperCase()}))} placeholder="Passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
             <input value={newRow.email} onChange={e=>setNewRow(v=>({...v,email:e.target.value}))} placeholder="Email" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
             <select value={newRow.role} onChange={e=>setNewRow(v=>({...v,role:e.target.value}))} style={{...IS,fontSize:13,padding:"6px 9px"}}>
               <option value="team">Team Member</option>
@@ -1554,7 +1554,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
     }
     return pp.slice().sort(defaultSort);
   }
-  const HAFTARAH_CARD_NAMES=["Haftarah Reading","Haftarah Trope"];
+  const HAFTARAH_CARD_NAMES=["Haftarah Reading"];
   function getSortedGroup(predicate, exemptFromHideNotStarted=false) {
     let pp=prayerList.filter(predicate);
     if(role==="learner") pp=pp.filter(p=>!p.hidden_from_learner);
@@ -2362,8 +2362,8 @@ function LearnerNameEditor({l,isMobile,onSave,formatLastSignedIn}) {
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?17:18}}>{l.name}</span>
       <button onClick={()=>setEditingName(true)} style={editBtn}>edit</button>
     </div>}
-    <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2,marginBottom:8}}>Last signed in: {formatLastSignedIn(l.last_signed_in_at)}</div>
-    {editingHebrew?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+    <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:8,marginBottom:12}}>Last signed in: {formatLastSignedIn(l.last_signed_in_at)}</div>
+    {editingHebrew?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:8}}>
       <input value={hebrewDraft} onChange={e=>setHebrewDraft(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveHebrew()} placeholder="Hebrew name" style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:14,fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,minWidth:180}} autoFocus/>
       <button onClick={saveHebrew} disabled={saving} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:saving?"not-allowed":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
       <button onClick={()=>{setHebrewDraft(l.hebrew_name||"");setEditingHebrew(false);}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
@@ -2475,7 +2475,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
   const [tier2Open,setTier2Open]=useState(false);
   const isAdmin = instructorUser?.role==="admin";
   return <div style={{background:"white",borderRadius:16,padding:isMobile?"14px":"18px 24px",marginBottom:20,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
-    <div style={{display:"flex",gap:isMobile?12:24,flexWrap:"wrap",alignItems:"flex-start",marginBottom:tier2Open?16:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",gap:isMobile?12:24,flexWrap:isMobile?"wrap":"nowrap",alignItems:"flex-start"}}>
       {isLead
         ?<LearnerNameEditor l={l} isMobile={isMobile} formatLastSignedIn={formatLastSignedIn} onSave={onSave}/>
         :<div><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:isMobile?18:22}}>{l.name}</div>{l.hebrew_name&&<div style={{color:C.blue,fontSize:13,fontWeight:"600",fontFamily:"Raleway,sans-serif"}}>{l.hebrew_name}</div>}<div style={{fontFamily:"Raleway,sans-serif",fontSize:11,color:C.midGray,marginTop:2}}>Last signed in: {l.last_signed_in_at?new Date(l.last_signed_in_at).toLocaleDateString():"Never"}</div></div>}
@@ -2492,11 +2492,13 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
           <div style={{fontFamily:"Raleway,sans-serif",fontSize:10,color:C.blue,opacity:0.8}}>until service</div>
         </div>;
       })()}
-      {isLead&&<button onClick={()=>setTier2Open(o=>!o)} style={{marginLeft:"auto",alignSelf:"center",background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>}
     </div>
+    {isLead&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+      <button onClick={()=>setTier2Open(o=>!o)} style={{background:"none",border:"1px solid #dee2e6",borderRadius:8,padding:"4px 12px",fontSize:12,color:C.midGray,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"600",flexShrink:0}}>{tier2Open?"▲ Less Settings":"▼ More Settings"}</button>
+    </div>}
     {tier2Open&&<div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <div><div style={LS}>Learner Access Key</div>
+        <div><div style={LS}>Learner Passcode</div>
           {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
             <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
             <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
@@ -2538,6 +2540,46 @@ function HideNotStartedToggle({learnerId}) {
 }
 
 // ── Login ──────────────────────────────────────────────────────────────────
+// ── Masked Passcode Input ───────────────────────────────────────────────────
+function MaskedPasscodeInput({value, onChange, onKeyDown, style, placeholder, autoFocus}) {
+  const [revealed, setRevealed] = useState(false);
+  const timeoutRef = useRef(null);
+  useEffect(()=>()=>{ if(timeoutRef.current) clearTimeout(timeoutRef.current); },[]);
+
+  function handleChange(e){
+    const displayed = e.target.value;
+    let newReal;
+    if(displayed.length > value.length){
+      newReal = (value + displayed.slice(value.length)).toUpperCase();
+      setRevealed(true);
+      if(timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(()=>setRevealed(false), 600);
+    } else if(displayed.length < value.length){
+      newReal = value.slice(0, displayed.length);
+      setRevealed(false);
+      if(timeoutRef.current) clearTimeout(timeoutRef.current);
+    } else {
+      newReal = displayed.toUpperCase();
+    }
+    onChange(newReal);
+  }
+
+  const dots = "•".repeat(value.length);
+  const displayValue = revealed && value.length>0 ? dots.slice(0,-1)+value.slice(-1) : dots;
+
+  return <input
+    value={displayValue}
+    onChange={handleChange}
+    onKeyDown={onKeyDown}
+    style={style}
+    placeholder={placeholder}
+    autoFocus={autoFocus}
+    autoCapitalize="characters"
+    autoCorrect="off"
+    spellCheck={false}
+  />;
+}
+
 function LoginScreen({onLogin}) {
   const {isMobile}=useBreakpoint();
   const [accessKey,setAccessKey]=useState("");
@@ -2547,10 +2589,13 @@ function LoginScreen({onLogin}) {
   async function handleLogin(){
     if(!accessKey.trim())return;
     setError("");setLoading(true);
+    const isMobileApp=import.meta.env.VITE_APP_MODE==="mobile";
     try{
-      // Check instructors first
-      const instr=await DB.getInstructor(accessKey.trim());
-      if(instr){onLogin("instructor",null,instr);setLoading(false);return;}
+      // Check instructors first (skipped in mobile app build — staff use the web version)
+      if(!isMobileApp){
+        const instr=await DB.getInstructor(accessKey.trim());
+        if(instr){onLogin("instructor",null,instr);setLoading(false);return;}
+      }
       // Then check learners
       const rows=await DB.getLearners();
       const learner=(rows||[]).find(l=>l.access_key&&l.access_key.toUpperCase()===accessKey.toUpperCase());
@@ -2562,7 +2607,9 @@ function LoginScreen({onLogin}) {
       } else {
         const parentLearner=(rows||[]).find(l=>l.parent_access_key&&l.parent_access_key.toUpperCase()===accessKey.toUpperCase());
         if(parentLearner){onLogin("parent",parentLearner.id);}
-        else setError("Access key not found. Check with your instructor.");
+        else if(isMobileApp&&await DB.getInstructor(accessKey.trim())){
+          setError("This passcode is for staff — use the web version at tbiprogresstracker.org.");
+        } else setError("Passcode not found. Check with your instructor.");
       }
     }catch(e){setError("Error: "+e.message);}
     setLoading(false);
@@ -2577,10 +2624,10 @@ function LoginScreen({onLogin}) {
     </div>
     <div style={{background:"white",borderRadius:20,padding:isMobile?"28px 24px":"40px 48px",width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
       <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 20px",fontSize:22,textAlign:"center"}}>Welcome!</h2>
-      <input value={accessKey} onChange={e=>{setAccessKey(e.target.value.toUpperCase());setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,textTransform:"uppercase",border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Access key…" autoFocus/>
+      <MaskedPasscodeInput value={accessKey} onChange={v=>{setAccessKey(v);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{...IS,fontSize:22,fontWeight:"800",textAlign:"center",letterSpacing:4,color:C.navy,border:`2px solid ${error?C.red:"#dee2e6"}`,outline:"none"}} placeholder="Passcode…" autoFocus/>
       {error&&<p style={{color:C.red,fontSize:13,margin:"8px 0 0",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
       <button onClick={handleLogin} disabled={loading} style={{width:"100%",marginTop:20,padding:"14px",background:C.blue,color:"white",border:"none",borderRadius:12,fontSize:17,fontFamily:"Raleway,sans-serif",fontWeight:"700",cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>{loading?"Checking…":"Sign In →"}</button>
-      <button onClick={()=>alert("Check the inside of your binder for your access key, or email cantorchilds@tbiport.org for help.")} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.midGray,fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",textDecoration:"underline"}}>Forgot access key?</button>
+      <button onClick={()=>alert("Check the inside of your binder for your passcode, or email cantorchilds@tbiport.org for help.")} style={{display:"block",margin:"12px auto 0",padding:0,background:"transparent",border:"none",color:C.midGray,fontSize:12,cursor:"pointer",fontFamily:"Raleway,sans-serif",textDecoration:"underline"}}>Forgot passcode?</button>
     </div>
   </div>;
 }
@@ -2716,7 +2763,7 @@ function AddLearnerModal({onAdd,onClose}) {
   function setField(key,val){setForm(f=>({...f,[key]:val,...(key==="parashah"?{specialShabbat:""}:{})}))}
 
   async function handle(){
-    if(!form.name||!form.accessKey){setError("Name and access key are required.");return;}
+    if(!form.name||!form.accessKey){setError("Name and passcode are required.");return;}
     setSaving(true);
     const id=genId();
     let parashaDisplay=form.parashah;
@@ -2732,7 +2779,7 @@ function AddLearnerModal({onAdd,onClose}) {
     }catch(e){
       const msg = e?.message||"";
       let friendly = "Error saving learner.";
-      if(msg.includes("unique") || msg.includes("duplicate")) friendly = "Access key is already taken — please choose a different one.";
+      if(msg.includes("unique") || msg.includes("duplicate")) friendly = "Passcode is already taken — please choose a different one.";
       else if(msg.includes("column")) friendly = `Database column error: ${msg.slice(0,120)}`;
       else if(msg.includes("network")||msg.includes("fetch")) friendly = "Network error — check your connection.";
       else friendly = `Error: ${msg.slice(0,120)}`;
@@ -2794,8 +2841,8 @@ function AddLearnerModal({onAdd,onClose}) {
         <div><label style={LS}>Date of Service (optional)</label><input type="date" value={form.dateOfService} onChange={e=>setField("dateOfService",e.target.value)} style={IS}/></div>
       </div>}
 
-      {/* Access key */}
-      <div style={{marginBottom:6}}><label style={LS}>Access Key</label><input value={form.accessKey} onChange={e=>setField("accessKey",e.target.value.toUpperCase())} style={IS} placeholder="SARAH2026"/></div>
+      {/* Passcode */}
+      <div style={{marginBottom:6}}><label style={LS}>Passcode</label><input value={form.accessKey} onChange={e=>setField("accessKey",e.target.value.toUpperCase())} style={IS} placeholder="SARAH2026"/></div>
       <p style={{fontSize:11,color:C.midGray,margin:"0 0 16px",fontFamily:"Raleway,sans-serif"}}></p>
 
       {error&&<p style={{color:C.red,fontSize:13,margin:"0 0 12px",fontFamily:"Raleway,sans-serif"}}>{error}</p>}
@@ -2950,8 +2997,16 @@ export default function App() {
   const {isMobile,isDesktop}=useBreakpoint();
 
   // Persist login across refresh
-  const [role,setRole]=useState(()=>localStorage.getItem("tbi_role")||null);
-  const [instructorUser,setInstructorUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("tbi_instructor")||"null");}catch{return null;}});
+  const isMobileApp=import.meta.env.VITE_APP_MODE==="mobile";
+  const [role,setRole]=useState(()=>{
+    const r=localStorage.getItem("tbi_role")||null;
+    if(isMobileApp&&r==="instructor"){
+      localStorage.removeItem("tbi_role");localStorage.removeItem("tbi_instructor");localStorage.removeItem("tbi_learner_id");
+      return null;
+    }
+    return r;
+  });
+  const [instructorUser,setInstructorUser]=useState(()=>{if(isMobileApp)return null;try{return JSON.parse(localStorage.getItem("tbi_instructor")||"null");}catch{return null;}});
   const [learnerId,setLearnerId]=useState(()=>localStorage.getItem("tbi_learner_id")||null);
   const [learners,setLearners]=useState([]);
   const [selectedLearner,setSelectedLearner]=useState(()=>{try{const r=JSON.parse(localStorage.getItem("tbi_selectedLearner")||"null");return r;}catch{return null;}});
