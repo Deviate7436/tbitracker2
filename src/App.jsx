@@ -2598,6 +2598,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
             <option value="Kitah Dalet">Kitah Dalet</option>
             <option value="Kitah Hei">Kitah Hei</option>
             <option value="Kitah Vav">Kitah Vav</option>
+            <option value="Kitah Zayin">Kitah Zayin</option>
           </select>
         </div>
       </div>}
