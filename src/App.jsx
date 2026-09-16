@@ -1103,50 +1103,14 @@ function InstructorsPanel({open,onToggle}) {
   const [showAdd,setShowAdd]=useState(false);
   const [newRow,setNewRow]=useState({name:"",access_key:"",role:"team",email:""});
   const [saving,setSaving]=useState(false);
-  const [assignLearners,setAssignLearners]=useState([]);
-  const [assignMap,setAssignMap]=useState({}); // instructorId -> Set of learnerId
-  const [expandedAssignId,setExpandedAssignId]=useState(null);
-  const [assignBusy,setAssignBusy]=useState(null); // `${instructorId}:${learnerId}` while toggling
 
   async function load(){
     setLoading(true);setError(null);
-    try{
-      const [instrs,learners,assigns]=await Promise.all([
-        DB.getAllInstructors(),
-        DB.getActiveLearners(),
-        DB.getAllAssignments(),
-      ]);
-      setInstructors(instrs||[]);
-      setAssignLearners((learners||[]).slice().sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name))));
-      const map={};
-      (assigns||[]).forEach(a=>{
-        if(!map[a.instructor_id])map[a.instructor_id]=new Set();
-        map[a.instructor_id].add(a.learner_id);
-      });
-      setAssignMap(map);
-    }
+    try{setInstructors((await DB.getAllInstructors())||[]);}
     catch(e){console.error(e);setError("Could not load instructors.");}
     setLoading(false);
   }
   useEffect(()=>{if(open)load();},[open]);
-
-  async function toggleAssignment(instructorId,learnerId){
-    const key=`${instructorId}:${learnerId}`;
-    const isAssigned=assignMap[instructorId]&&assignMap[instructorId].has(learnerId);
-    setAssignBusy(key);
-    try{
-      if(isAssigned) await DB.unassignLearner(learnerId,instructorId);
-      else await DB.assignLearner(learnerId,instructorId);
-      setAssignMap(prev=>{
-        const next={...prev};
-        const set=new Set(next[instructorId]||[]);
-        if(isAssigned) set.delete(learnerId); else set.add(learnerId);
-        next[instructorId]=set;
-        return next;
-      });
-    }catch(e){console.error(e);setError("Could not update assignment.");}
-    setAssignBusy(null);
-  }
 
   function startEdit(row){setEditingId(row.id);setEditRow({name:row.name,access_key:row.access_key,role:row.role,email:row.email||""});}
   async function saveEdit(id){
@@ -1211,29 +1175,15 @@ function InstructorsPanel({open,onToggle}) {
               </div>
             </div>
           :
-            <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-                <div style={{minWidth:0}}>
-                  <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{r.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>({roleLabel[r.role]||r.role})</span></div>
-                  <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {r.access_key}{r.email?` · ${r.email}`:""}</div>
-                </div>
-                <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  {r.role==="team"&&<Btn small outline color={C.blue} onClick={()=>setExpandedAssignId(expandedAssignId===r.id?null:r.id)}>{expandedAssignId===r.id?"Hide Learners":"Assign Learners"}</Btn>}
-                  <Btn small outline color={C.navy} onClick={()=>startEdit(r)}>Edit</Btn>
-                  <Btn small danger onClick={()=>remove(r.id)}>Remove</Btn>
-                </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{r.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>({roleLabel[r.role]||r.role})</span></div>
+                <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {r.access_key}{r.email?` · ${r.email}`:""}</div>
               </div>
-              {expandedAssignId===r.id&&r.role==="team"&&<div style={{marginTop:10,padding:"10px 12px",background:"#fafbfc",borderRadius:8,border:"1px solid #e9ecef",maxHeight:260,overflowY:"auto"}}>
-                {assignLearners.length===0?<div style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>No active learners.</div>:
-                  assignLearners.map(l=>{
-                    const checked=!!(assignMap[r.id]&&assignMap[r.id].has(l.id));
-                    const busy=assignBusy===`${r.id}:${l.id}`;
-                    return <label key={l.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontFamily:"Raleway,sans-serif",fontSize:13,color:C.navy,cursor:busy?"wait":"pointer",opacity:busy?0.6:1}}>
-                      <input type="checkbox" checked={checked} disabled={busy} onChange={()=>toggleAssignment(r.id,l.id)}/>
-                      {l.name}
-                    </label>;
-                  })}
-              </div>}
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <Btn small outline color={C.navy} onClick={()=>startEdit(r)}>Edit</Btn>
+                <Btn small danger onClick={()=>remove(r.id)}>Remove</Btn>
+              </div>
             </div>
           }
         </div>)}
@@ -2633,12 +2583,23 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
         </div>
       </div>
       <LearnerInfoEditor l={l} isMobile={isMobile} onSave={onSave}/>
-      {isAdmin&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
-        <div style={LS}>Category</div>
-        <select value={l.category||"bnei_mitzvah"} onChange={async e=>{const patch={...l,category:e.target.value};await DB.upsertLearner(patch);onSave(patch);}} style={{...IS,fontSize:13,padding:"6px 9px",width:"auto",color:categoryColor(l.category),fontWeight:"700"}}>
-          <option value="bnei_mitzvah">B'nei Mitzvah Student</option>
-          <option value="rs_learner">RS Learner</option>
-        </select>
+      {isAdmin&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5",display:"flex",gap:20,flexWrap:"wrap"}}>
+        <div>
+          <div style={LS}>Category</div>
+          <select value={l.category||"bnei_mitzvah"} onChange={async e=>{const patch={...l,category:e.target.value};await DB.upsertLearner(patch);onSave(patch);}} style={{...IS,fontSize:13,padding:"6px 9px",width:"auto",color:categoryColor(l.category),fontWeight:"700"}}>
+            <option value="bnei_mitzvah">B'nei Mitzvah Student</option>
+            <option value="rs_learner">RS Learner</option>
+          </select>
+        </div>
+        <div>
+          <div style={LS}>Grade Level</div>
+          <select value={l.grade_level||""} onChange={async e=>{const patch={...l,grade_level:e.target.value||null};await DB.upsertLearner(patch);onSave(patch);}} style={{...IS,fontSize:13,padding:"6px 9px",width:"auto",fontWeight:"700"}}>
+            <option value="">— Unset —</option>
+            <option value="Kitah Dalet">Kitah Dalet</option>
+            <option value="Kitah Hei">Kitah Hei</option>
+            <option value="Kitah Vav">Kitah Vav</option>
+          </select>
+        </div>
       </div>}
       {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
       <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
