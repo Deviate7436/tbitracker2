@@ -162,6 +162,7 @@ const DB = {
   assignLearner: (learnerId, instructorId) => sb("learner_instructor_assignments?on_conflict=learner_id,instructor_id", "POST", {learner_id:learnerId, instructor_id:instructorId}, {"Prefer":"resolution=merge-duplicates,return=representation"}),
   unassignLearner: (learnerId, instructorId) => sb(`learner_instructor_assignments?learner_id=eq.${learnerId}&instructor_id=eq.${instructorId}`, "DELETE"),
   getAssignmentsForInstructor: (instructorId) => sb(`learner_instructor_assignments?instructor_id=eq.${instructorId}&select=learner_id`),
+  getAssignmentsForLearner: (learnerId) => sb(`learner_instructor_assignments?learner_id=eq.${learnerId}&select=instructor_id`),
 
   // Deleted learners backup
   insertDeletedLearner: (snapshot) => sb("deleted_learners", "POST", snapshot, {"Prefer":"return=representation"}),
@@ -2439,6 +2440,7 @@ function LearnerNameEditor({l,isMobile,onSave,formatLastSignedIn}) {
 
 // ── Learner Info Editor ────────────────────────────────────────────────────
 function LearnerInfoEditor({l,isMobile,onSave}) {
+  const hzRoleLabel={admin:"Admin",lead:"Lead",team:"Team Member"};
   const [instrDraft,setInstrDraft]=useState(parseInstructorNames(l.instructor));
   const [email1Draft,setEmail1Draft]=useState(l.email1||"");
   const [email2Draft,setEmail2Draft]=useState(l.email2||"");
@@ -2446,7 +2448,44 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   const [voiceTrackDraft,setVoiceTrackDraft]=useState(normalizeVoiceTrack(l.voice_track));
   const [emailOpen,setEmailOpen]=useState(false);
   const [saving,setSaving]=useState(false);
+  const [hzInstructors,setHzInstructors]=useState([]);
+  const [hzAssigned,setHzAssigned]=useState(new Set());
+  const [hzOpen,setHzOpen]=useState(false);
+  const [hzBusy,setHzBusy]=useState(null); // instructor_id while toggling
+  const hzRef=useRef(null);
   useEffect(()=>{setInstrDraft(parseInstructorNames(l.instructor));setEmail1Draft(l.email1||"");setEmail2Draft(l.email2||"");setEmail3Draft(l.email3||"");setVoiceTrackDraft(normalizeVoiceTrack(l.voice_track));setEmailOpen(false);},[l.id,l.voice_track]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    Promise.all([DB.getAllInstructors(),DB.getAssignmentsForLearner(l.id)]).then(([instrs,assigns])=>{
+      if(cancelled)return;
+      setHzInstructors((instrs||[]).slice().sort((a,b)=>a.name.localeCompare(b.name)));
+      setHzAssigned(new Set((assigns||[]).map(a=>a.instructor_id)));
+    }).catch(e=>console.error("Could not load Hebrew Zoom instructors:",e));
+    return ()=>{cancelled=true;};
+  },[l.id]);
+
+  useEffect(()=>{
+    if(!hzOpen)return;
+    function onClick(e){if(hzRef.current&&!hzRef.current.contains(e.target))setHzOpen(false);}
+    document.addEventListener("mousedown",onClick);
+    return ()=>document.removeEventListener("mousedown",onClick);
+  },[hzOpen]);
+
+  async function toggleHzInstructor(instructorId){
+    const isAssigned=hzAssigned.has(instructorId);
+    setHzBusy(instructorId);
+    try{
+      if(isAssigned) await DB.unassignLearner(l.id,instructorId);
+      else await DB.assignLearner(l.id,instructorId);
+      setHzAssigned(prev=>{
+        const next=new Set(prev);
+        if(isAssigned) next.delete(instructorId); else next.add(instructorId);
+        return next;
+      });
+    }catch(e){console.error("Could not update Hebrew Zoom instructor assignment:",e);}
+    setHzBusy(null);
+  }
 
   async function savePatch(fields){
     setSaving(true);
@@ -2475,7 +2514,7 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
   }
 
   return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.25fr 0.8fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.1fr 1fr 0.7fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
       <div><div style={LS}>Instructor</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer",flexWrap:"wrap"}}>
@@ -2484,6 +2523,27 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
             <span style={{color:C.midGray,fontSize:11}}>{email}</span>
           </label>)}
         </div>
+      </div>
+      <div ref={hzRef} style={{position:"relative"}}>
+        <div style={LS}>Hebrew Zoom Instructors</div>
+        <button type="button" onClick={()=>setHzOpen(o=>!o)} style={{...IS,fontSize:13,padding:"6px 10px",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",background:"white"}}>
+          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {hzAssigned.size===0?<span style={{color:C.midGray}}>None selected</span>:hzInstructors.filter(i=>hzAssigned.has(i.id)).map(i=>i.name).join(", ")}
+          </span>
+          <span style={{fontSize:11,color:C.midGray,flexShrink:0,marginLeft:6}}>{hzOpen?"▲":"▼"}</span>
+        </button>
+        {hzOpen&&<div style={{position:"absolute",zIndex:10,top:"100%",left:0,right:0,marginTop:4,background:"white",border:"1px solid #dee2e6",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.1)",maxHeight:220,overflowY:"auto",padding:8}}>
+          {hzInstructors.length===0?<div style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",padding:4}}>No instructors on file.</div>:
+            hzInstructors.map(i=>{
+              const checked=hzAssigned.has(i.id);
+              const busy=hzBusy===i.id;
+              return <label key={i.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 4px",fontFamily:"Raleway,sans-serif",fontSize:13,color:C.navy,cursor:busy?"wait":"pointer",opacity:busy?0.6:1}}>
+                <input type="checkbox" checked={checked} disabled={busy} onChange={()=>toggleHzInstructor(i.id)} style={{accentColor:C.blue}}/>
+                <span>{i.name}</span>
+                <span style={{color:C.midGray,fontSize:11}}>({hzRoleLabel[i.role]||i.role})</span>
+              </label>;
+            })}
+        </div>}
       </div>
       <div><div style={LS}>Voice Track</div>
         <div style={{display:"inline-flex",border:"1px solid #dee2e6",borderRadius:10,overflow:"hidden",background:"white"}}>
