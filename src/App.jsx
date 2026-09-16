@@ -157,6 +157,12 @@ const DB = {
   updateInstructor: (id, patch) => sb(`instructors?id=eq.${id}`, "PATCH", patch, {"Prefer":"return=representation"}),
   deleteInstructor: (id) => sb(`instructors?id=eq.${id}`, "DELETE"),
 
+  // Learner <-> instructor assignments
+  getAllAssignments: () => sb("learner_instructor_assignments?select=*"),
+  assignLearner: (learnerId, instructorId) => sb("learner_instructor_assignments?on_conflict=learner_id,instructor_id", "POST", {learner_id:learnerId, instructor_id:instructorId}, {"Prefer":"resolution=merge-duplicates,return=representation"}),
+  unassignLearner: (learnerId, instructorId) => sb(`learner_instructor_assignments?learner_id=eq.${learnerId}&instructor_id=eq.${instructorId}`, "DELETE"),
+  getAssignmentsForInstructor: (instructorId) => sb(`learner_instructor_assignments?instructor_id=eq.${instructorId}&select=learner_id`),
+
   // Deleted learners backup
   insertDeletedLearner: (snapshot) => sb("deleted_learners", "POST", snapshot, {"Prefer":"return=representation"}),
 
@@ -384,6 +390,13 @@ function useBreakpoint() {
 }
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+// Best-effort last name for sorting: last whitespace-separated token of the name field.
+// The learners table has no dedicated last_name column, so multi-word surnames or
+// suffixes (Jr., etc.) will not sort perfectly correctly.
+function lastNameOf(name){
+  const parts=(name||"").trim().split(/\s+/);
+  return (parts[parts.length-1]||"").toLowerCase();
+}
 
 function isFriOrSat(dateStr) {
   if(!dateStr) return false;
@@ -1089,14 +1102,50 @@ function InstructorsPanel({open,onToggle}) {
   const [showAdd,setShowAdd]=useState(false);
   const [newRow,setNewRow]=useState({name:"",access_key:"",role:"team",email:""});
   const [saving,setSaving]=useState(false);
+  const [assignLearners,setAssignLearners]=useState([]);
+  const [assignMap,setAssignMap]=useState({}); // instructorId -> Set of learnerId
+  const [expandedAssignId,setExpandedAssignId]=useState(null);
+  const [assignBusy,setAssignBusy]=useState(null); // `${instructorId}:${learnerId}` while toggling
 
   async function load(){
     setLoading(true);setError(null);
-    try{setInstructors((await DB.getAllInstructors())||[]);}
+    try{
+      const [instrs,learners,assigns]=await Promise.all([
+        DB.getAllInstructors(),
+        DB.getActiveLearners(),
+        DB.getAllAssignments(),
+      ]);
+      setInstructors(instrs||[]);
+      setAssignLearners((learners||[]).slice().sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name))));
+      const map={};
+      (assigns||[]).forEach(a=>{
+        if(!map[a.instructor_id])map[a.instructor_id]=new Set();
+        map[a.instructor_id].add(a.learner_id);
+      });
+      setAssignMap(map);
+    }
     catch(e){console.error(e);setError("Could not load instructors.");}
     setLoading(false);
   }
   useEffect(()=>{if(open)load();},[open]);
+
+  async function toggleAssignment(instructorId,learnerId){
+    const key=`${instructorId}:${learnerId}`;
+    const isAssigned=assignMap[instructorId]&&assignMap[instructorId].has(learnerId);
+    setAssignBusy(key);
+    try{
+      if(isAssigned) await DB.unassignLearner(learnerId,instructorId);
+      else await DB.assignLearner(learnerId,instructorId);
+      setAssignMap(prev=>{
+        const next={...prev};
+        const set=new Set(next[instructorId]||[]);
+        if(isAssigned) set.delete(learnerId); else set.add(learnerId);
+        next[instructorId]=set;
+        return next;
+      });
+    }catch(e){console.error(e);setError("Could not update assignment.");}
+    setAssignBusy(null);
+  }
 
   function startEdit(row){setEditingId(row.id);setEditRow({name:row.name,access_key:row.access_key,role:row.role,email:row.email||""});}
   async function saveEdit(id){
@@ -1161,15 +1210,29 @@ function InstructorsPanel({open,onToggle}) {
               </div>
             </div>
           :
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <div style={{minWidth:0}}>
-                <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{r.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>({roleLabel[r.role]||r.role})</span></div>
-                <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {r.access_key}{r.email?` · ${r.email}`:""}</div>
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{r.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>({roleLabel[r.role]||r.role})</span></div>
+                  <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {r.access_key}{r.email?` · ${r.email}`:""}</div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  {r.role==="team"&&<Btn small outline color={C.blue} onClick={()=>setExpandedAssignId(expandedAssignId===r.id?null:r.id)}>{expandedAssignId===r.id?"Hide Learners":"Assign Learners"}</Btn>}
+                  <Btn small outline color={C.navy} onClick={()=>startEdit(r)}>Edit</Btn>
+                  <Btn small danger onClick={()=>remove(r.id)}>Remove</Btn>
+                </div>
               </div>
-              <div style={{display:"flex",gap:8,flexShrink:0}}>
-                <Btn small outline color={C.navy} onClick={()=>startEdit(r)}>Edit</Btn>
-                <Btn small danger onClick={()=>remove(r.id)}>Remove</Btn>
-              </div>
+              {expandedAssignId===r.id&&r.role==="team"&&<div style={{marginTop:10,padding:"10px 12px",background:"#fafbfc",borderRadius:8,border:"1px solid #e9ecef",maxHeight:260,overflowY:"auto"}}>
+                {assignLearners.length===0?<div style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>No active learners.</div>:
+                  assignLearners.map(l=>{
+                    const checked=!!(assignMap[r.id]&&assignMap[r.id].has(l.id));
+                    const busy=assignBusy===`${r.id}:${l.id}`;
+                    return <label key={l.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontFamily:"Raleway,sans-serif",fontSize:13,color:C.navy,cursor:busy?"wait":"pointer",opacity:busy?0.6:1}}>
+                      <input type="checkbox" checked={checked} disabled={busy} onChange={()=>toggleAssignment(r.id,l.id)}/>
+                      {l.name}
+                    </label>;
+                  })}
+              </div>}
             </div>
           }
         </div>)}
@@ -3045,6 +3108,21 @@ export default function App() {
   const [deleteConfirm,setDeleteConfirm]=useState(null); // learner to delete
   const [archiveConfirm,setArchiveConfirm]=useState(null);
   const [currentLearnerData,setCurrentLearnerData]=useState(null); // for learner header
+  const [assignedLearnerIds,setAssignedLearnerIds]=useState(null); // Set of learner ids assigned to this team member, or null if not loaded/not applicable
+
+  // Team members see "Your Learners" first in the dropdown — fetch their assignments on login.
+  useEffect(()=>{
+    let cancelled=false;
+    if(role==="instructor"&&instructorUser&&instructorUser.role==="team"){
+      DB.getAssignmentsForInstructor(instructorUser.id).then(rows=>{
+        if(cancelled)return;
+        setAssignedLearnerIds(new Set((rows||[]).map(r=>r.learner_id)));
+      }).catch(e=>{console.error("Could not load learner assignments:",e);if(!cancelled)setAssignedLearnerIds(new Set());});
+    } else {
+      setAssignedLearnerIds(null);
+    }
+    return ()=>{cancelled=true;};
+  },[role,instructorUser?.id,instructorUser?.role]);
 
   function persistInstructor(u){setInstructorUser(u);if(u)localStorage.setItem("tbi_instructor",JSON.stringify(u));else localStorage.removeItem("tbi_instructor");}
   function persistLogin(r,lid){
@@ -3269,7 +3347,17 @@ export default function App() {
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
               style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`2px solid ${C.blue}`,background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",appearance:"none",paddingRight:32}}>
               <option value="" disabled>— Select a learner —</option>
-              {learners.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
+              {instructorUser?.role==="team"&&assignedLearnerIds?(()=>{
+                const mine=learners.filter(l=>assignedLearnerIds.has(l.id)).sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name)));
+                const others=learners.filter(l=>!assignedLearnerIds.has(l.id)).sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name)));
+                return <>
+                  <option disabled>— Your Learners —</option>
+                  {mine.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
+                  <option disabled>— Other Learners —</option>
+                  {others.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
+                </>;
+              })():
+                learners.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
             </select>
             <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:C.midGray}}>▾</span>
           </div>
