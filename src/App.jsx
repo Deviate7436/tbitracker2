@@ -3136,7 +3136,7 @@ export default function App() {
   // Team members and leads see "Your Learners" first in the dropdown — fetch their assignments on login.
   useEffect(()=>{
     let cancelled=false;
-    if(role==="instructor"&&instructorUser&&(instructorUser.role==="team"||instructorUser.role==="lead")){
+    if(role==="instructor"&&instructorUser&&(instructorUser.role==="team"||instructorUser.role==="lead"||instructorUser.role==="admin")){
       DB.getAssignmentsForInstructor(instructorUser.id).then(rows=>{
         if(cancelled)return;
         setAssignedLearnerIds(new Set((rows||[]).map(r=>r.learner_id)));
@@ -3371,7 +3371,7 @@ export default function App() {
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
               style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`2px solid ${C.blue}`,background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",appearance:"none",paddingRight:32}}>
               <option value="" disabled>— Select a learner —</option>
-              {(instructorUser?.role==="team"||instructorUser?.role==="lead")&&assignedLearnerIds?(()=>{
+              {(instructorUser?.role==="team"||instructorUser?.role==="lead"||instructorUser?.role==="admin")&&assignedLearnerIds?(()=>{
                 const byDate=(a,b)=>{
                   if(!a.date_of_service&&!b.date_of_service)return 0;
                   if(!a.date_of_service)return 1;
@@ -3379,7 +3379,7 @@ export default function App() {
                   return a.date_of_service.localeCompare(b.date_of_service);
                 };
                 const byLastName=(a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name));
-                const sortFn=instructorUser.role==="lead"?byDate:byLastName;
+                const sortFn=(instructorUser.role==="lead"||instructorUser.role==="admin")?byDate:byLastName;
                 const mine=learners.filter(l=>assignedLearnerIds.has(l.id)).sort(sortFn);
                 const others=learners.filter(l=>!assignedLearnerIds.has(l.id)).sort(sortFn);
                 return <>
