@@ -274,6 +274,9 @@ async function sendAssignmentEmail({learner, assignment}) {
 
 const ATT_ROW_DEFS = [["fri1","Friday #1"],["fri2","Friday #2"],["fri3","Friday #3"],["fri4","Friday #4"],["sat1","Saturday #1"],["sat2","Saturday #2"],["sat3","Saturday #3"],["sat4","Saturday #4"],["sat5","Saturday #5"],["sat6","Saturday #6"]];
 
+function normalizeCode(s) {
+  return (s||"").replace(/\s+/g,"").toUpperCase();
+}
 function isoDaysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate()-n);
@@ -1384,7 +1387,6 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
               </span>
               :<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
-            {role==="parent"&&(effectivePdf||effectiveAudio)&&<button onClick={()=>effectivePdf?setShowMedia("pdf"):setShowMedia("audio")} style={{padding:"5px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
             {hasAudio&&!hasPdf&&!simplified
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
@@ -2635,7 +2637,7 @@ function MaskedPasscodeInput({value, onChange, onKeyDown, style, placeholder, au
     const displayed = e.target.value;
     let newReal;
     if(displayed.length > value.length){
-      newReal = (value + displayed.slice(value.length)).toUpperCase();
+      newReal = value + displayed.slice(value.length);
       setRevealed(true);
       if(timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(()=>setRevealed(false), 600);
@@ -2644,7 +2646,7 @@ function MaskedPasscodeInput({value, onChange, onKeyDown, style, placeholder, au
       setRevealed(false);
       if(timeoutRef.current) clearTimeout(timeoutRef.current);
     } else {
-      newReal = displayed.toUpperCase();
+      newReal = displayed;
     }
     onChange(newReal);
   }
@@ -2678,21 +2680,21 @@ function LoginScreen({onLogin}) {
     try{
       // Check instructors first (skipped in mobile app build — staff use the web version)
       if(!isMobileApp){
-        const instr=await DB.getInstructor(accessKey.trim());
+        const instr=await DB.getInstructor(normalizeCode(accessKey));
         if(instr){onLogin("instructor",null,instr);setLoading(false);return;}
       }
       // Then check learners
       const rows=await DB.getLearners();
-      const learner=(rows||[]).find(l=>l.access_key&&l.access_key.toUpperCase()===accessKey.toUpperCase());
+      const learner=(rows||[]).find(l=>l.access_key&&normalizeCode(l.access_key)===normalizeCode(accessKey));
       if(learner){
         const lastSignedInAt=new Date().toISOString();
         try{await DB.updateLearnerLastSignedIn(learner.id,lastSignedInAt);learner.last_signed_in_at=lastSignedInAt;}
         catch(e){console.error("Could not update learner last sign-in:",e);}
         onLogin("learner",learner.id);
       } else {
-        const parentLearner=(rows||[]).find(l=>l.parent_access_key&&l.parent_access_key.toUpperCase()===accessKey.toUpperCase());
+        const parentLearner=(rows||[]).find(l=>l.parent_access_key&&normalizeCode(l.parent_access_key)===normalizeCode(accessKey));
         if(parentLearner){onLogin("parent",parentLearner.id);}
-        else if(isMobileApp&&await DB.getInstructor(accessKey.trim())){
+        else if(isMobileApp&&await DB.getInstructor(normalizeCode(accessKey))){
           setError("This passcode is for staff — use the web version at tbiprogresstracker.org.");
         } else setError("Passcode not found. Check with your instructor.");
       }
@@ -2974,7 +2976,6 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
 
   const buttonData=[
     {id:"prayers",label:"Prayers & Readings",icon:"📖",color:C.blue,progress:{value:stats.prayerDone,max:stats.prayerTotal||1,text:`${stats.prayerDone}/${stats.prayerTotal||0}`}},
-    {id:"smartreview",label:"Smart Review",icon:"🧠",color:C.purple,badge:stats.smartDoneToday?"check":"alert"},
     {id:"assignments",label:"My Assignments",icon:"📋",color:C.orange,badge:stats.openAssignmentsThisWeek>0?"count":null,badgeText:stats.openAssignmentsThisWeek>0?String(stats.openAssignmentsThisWeek):null},
     {id:"services",label:"Shabbat Attendance",icon:"🕍",color:C.green,progress:{value:stats.attendanceDone,max:stats.attendanceTotal,text:`${stats.attendanceDone}/${stats.attendanceTotal}`}}
   ];
@@ -3097,7 +3098,7 @@ export default function App() {
   const [selectedLearner,setSelectedLearner]=useState(()=>{try{const r=JSON.parse(localStorage.getItem("tbi_selectedLearner")||"null");return r;}catch{return null;}});
   const [activeTab,setActiveTab]=useState(()=>{
     const hash=window.location.hash.replace("#","");
-    const valid=["prayers","assignments","smartreview","services","home"];
+    const valid=["prayers","assignments","services","home"];
     if(hash&&valid.includes(hash)) return hash;
     return localStorage.getItem("tbi_role")==="learner"?"home":"prayers";
   });
@@ -3105,7 +3106,7 @@ export default function App() {
   useEffect(()=>{
     function onHashChange(){
       const hash=window.location.hash.replace("#","");
-      const valid=["prayers","assignments","smartreview","services","home"];
+      const valid=["prayers","assignments","services","home"];
       if(hash&&valid.includes(hash)) setActiveTab(hash);
     }
     window.addEventListener("hashchange",onHashChange);
@@ -3132,10 +3133,10 @@ export default function App() {
   const [currentLearnerData,setCurrentLearnerData]=useState(null); // for learner header
   const [assignedLearnerIds,setAssignedLearnerIds]=useState(null); // Set of learner ids assigned to this team member, or null if not loaded/not applicable
 
-  // Team members see "Your Learners" first in the dropdown — fetch their assignments on login.
+  // Team members and leads see "Your Learners" first in the dropdown — fetch their assignments on login.
   useEffect(()=>{
     let cancelled=false;
-    if(role==="instructor"&&instructorUser&&instructorUser.role==="team"){
+    if(role==="instructor"&&instructorUser&&(instructorUser.role==="team"||instructorUser.role==="lead")){
       DB.getAssignmentsForInstructor(instructorUser.id).then(rows=>{
         if(cancelled)return;
         setAssignedLearnerIds(new Set((rows||[]).map(r=>r.learner_id)));
@@ -3300,7 +3301,7 @@ export default function App() {
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat Attendance"}]
     :role==="parent"
     ?[{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
-    :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"smartreview",label:"🧠 Review"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
+    :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
   ).filter(t=>!isRSActive||t.id==="prayers");
   const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
   useEffect(()=>{
@@ -3348,7 +3349,8 @@ export default function App() {
         <div style={{color:C.blue,fontSize:isMobile?9:11,letterSpacing:2,textTransform:"uppercase",fontWeight:"700",marginTop:2}}>Progress Tracker</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
-        {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":"Team Member"}</span>}
+        {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":instructorUser.role==="admin"?"Admin":"Team Member"}</span>}
+        {!isMobile&&role==="parent"&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>Parent</span>}
         {instructorUser&&instructorUser.role==="team"&&<a href="mailto:cantorchilds@tbiport.org?subject=Question from Team Member" style={{padding:isMobile?"5px 8px":"6px 12px",borderRadius:8,border:`1px solid ${C.blue}55`,background:C.lightBlue,color:C.blue,fontSize:isMobile?11:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",flexShrink:0}}>✉ Contact Cantor David</a>}
         {role==="instructor"&&isLead&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
         {role==="instructor"&&instructorUser?.role==="team"&&<button onClick={()=>setShowTutorial(true)} style={{background:"none",border:"1px solid #dee2e6",color:C.navy,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>❓ Tutorial</button>}
@@ -3369,9 +3371,17 @@ export default function App() {
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
               style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`2px solid ${C.blue}`,background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",appearance:"none",paddingRight:32}}>
               <option value="" disabled>— Select a learner —</option>
-              {instructorUser?.role==="team"&&assignedLearnerIds?(()=>{
-                const mine=learners.filter(l=>assignedLearnerIds.has(l.id)).sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name)));
-                const others=learners.filter(l=>!assignedLearnerIds.has(l.id)).sort((a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name)));
+              {(instructorUser?.role==="team"||instructorUser?.role==="lead")&&assignedLearnerIds?(()=>{
+                const byDate=(a,b)=>{
+                  if(!a.date_of_service&&!b.date_of_service)return 0;
+                  if(!a.date_of_service)return 1;
+                  if(!b.date_of_service)return -1;
+                  return a.date_of_service.localeCompare(b.date_of_service);
+                };
+                const byLastName=(a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name));
+                const sortFn=instructorUser.role==="lead"?byDate:byLastName;
+                const mine=learners.filter(l=>assignedLearnerIds.has(l.id)).sort(sortFn);
+                const others=learners.filter(l=>!assignedLearnerIds.has(l.id)).sort(sortFn);
                 return <>
                   <option disabled>— Your Learners —</option>
                   {mine.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
@@ -3432,7 +3442,6 @@ export default function App() {
         {activeTab==="home"&&role==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
         {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&!isRSActive&&<Assignments    learnerId={selectedLearner||learnerId} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
-        {activeTab==="smartreview"&&!isRSActive&&<SmartReview    learnerId={selectedLearner}/>}
         {activeTab==="services"   &&!isRSActive&&<ServiceAttendance learnerId={selectedLearner||learnerId} role={role} isLead={isLead}/>}
       </>}
       {role==="learner"&&currentLearnerData?.instructor&&<div style={{textAlign:"center",padding:"24px 0 8px"}}>
