@@ -785,9 +785,9 @@ function MultiPageViewer({pages,title,onClose}) {
     {page.audio_url&&<div style={{background:"#0a2a4a",padding:"8px 16px",flexShrink:0}}>
       <AudioPlayer url={page.audio_url} name={page.audio_name||`${title} — Page ${pageIdx+1}`}/>
     </div>}
-    <div style={{flex:1,overflow:"hidden"}}>
+    <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",background:"white"}}>
       {page.pdf_url
-        ?<iframe src={page.pdf_url} style={{width:"100%",height:"100%",border:"none"}} title={`Page ${pageIdx+1}`}/>
+        ?<PdfCanvasDocument key={`${pageIdx}-${page.pdf_url}`} url={page.pdf_url} title={`${title} — Page ${pageIdx+1}`}/>
         :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"rgba(255,255,255,0.5)",fontFamily:"Raleway,sans-serif"}}>No PDF for this page</div>}
     </div>
     <div style={{background:C.navy,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
