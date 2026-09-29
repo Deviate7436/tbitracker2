@@ -545,8 +545,17 @@ function DownloadIconButton({onClick,title,color=C.navy}) {
   </button>;
 }
 
+let DING_AUDIO=null;
+function getDingAudio() {
+  if(!DING_AUDIO){
+    try{DING_AUDIO=new Audio(`data:audio/mp3;base64,${DING_B64}`);DING_AUDIO.preload="auto";DING_AUDIO.volume=0.9;DING_AUDIO.load();}catch(e){DING_AUDIO=null;}
+  }
+  return DING_AUDIO;
+}
 function playDingSound() {
-  try{const audio=new Audio(`data:audio/mp3;base64,${DING_B64}`);audio.volume=0.9;audio.play().catch(()=>{});}catch(e){}
+  const a=getDingAudio();
+  if(!a){playChime();return;}
+  try{a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>playChime());}catch(e){playChime();}
 }
 function playChime() {
   try{const ctx=new(window.AudioContext||window.webkitAudioContext)();[523,659,784,1047].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,ctx.currentTime+i*0.12);g.gain.linearRampToValueAtTime(0.35,ctx.currentTime+i*0.12+0.05);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.12+0.8);o.start(ctx.currentTime+i*0.12);o.stop(ctx.currentTime+i*0.12+0.9);});}catch(e){}
@@ -1319,7 +1328,8 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const selectedDefaultAudio=getDefaultAudioForVoice(defaultMedia,voiceTrack);
   const effectiveAudio=prayer.audio||selectedDefaultAudio.url||null;
   const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
-  const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
+  const hasMultiPage=!!(prayer.pages&&prayer.pages.length>1);
+  const hasPdf=!!effectivePdf||hasMultiPage;const hasAudio=!!effectiveAudio;
 
   const chatContainerRef=useRef(null);
   useEffect(()=>{
@@ -1357,6 +1367,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
     : "white";
   const isNotStarted = (role==="learner"||role==="parent") && prayer.status==="Not Started";
   return <>
+    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={prayer.pages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
@@ -1381,7 +1392,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             {hasPdf
-              ?<span data-tut="tut-view-media">{prayer.pages&&prayer.pages.length>1
+              ?<span data-tut="tut-view-media">{hasMultiPage
                 ?<button onClick={()=>setShowMultiPage(true)} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Pages ({prayer.pages.length})</button>
                 :<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
               </span>
@@ -3119,6 +3130,16 @@ export default function App() {
   }
   const [learnerViewMode,setLearnerViewMode]=useState("simplified");
   const [showDing,setShowDing]=useState(false);
+  useEffect(()=>{
+    getDingAudio();
+    function unlock(){
+      const a=getDingAudio();
+      if(a){try{a.muted=true;const pr=a.play();if(pr&&pr.then)pr.then(()=>{a.pause();a.currentTime=0;a.muted=false;}).catch(()=>{a.muted=false;});else{a.muted=false;}}catch(e){a.muted=false;}}
+      window.removeEventListener("pointerdown",unlock);
+    }
+    window.addEventListener("pointerdown",unlock,{once:true});
+    return ()=>window.removeEventListener("pointerdown",unlock);
+  },[]);
   const [showAddLearner,setShowAddLearner]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [showTutorial,setShowTutorial]=useState(false);
