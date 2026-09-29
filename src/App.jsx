@@ -1311,7 +1311,7 @@ function MonthlyUpdatesModal({onClose}) {
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false,hideStatus=false}) {
+function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false,hideStatus=false,onDelete=null,reorder=null}) {
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
@@ -1370,7 +1370,16 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
     {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={prayer.pages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
-    <div style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)",marginBottom:8,position:"relative",opacity:isNotStarted?0.6:1}}>
+    <div
+      onDragOver={reorder?(e=>{e.preventDefault();e.dataTransfer.dropEffect="move";reorder.onOver();}):undefined}
+      onDrop={reorder?(e=>{e.preventDefault();reorder.onDrop();}):undefined}
+      style={{background:learnerCardBg,borderRadius:12,overflow:"hidden",borderLeft:`4px solid ${isNotStarted?"#dee2e6":statusColor}`,boxShadow:reorder?.isOver?`0 0 0 2px ${C.blue}`:(isNotStarted?"none":"0 2px 8px rgba(0,0,0,0.06)"),marginBottom:8,position:"relative",opacity:reorder?.isDragging?0.4:(isNotStarted?0.6:1)}}>
+      {reorder&&<span
+        draggable
+        onDragStart={e=>{e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",prayer.id);const card=e.currentTarget.parentElement;if(card)e.dataTransfer.setDragImage(card,20,20);}catch(err){}reorder.onStart();}}
+        onDragEnd={reorder.onEnd}
+        title="Drag to reorder"
+        style={{position:"absolute",bottom:10,left:14,cursor:"grab",color:C.midGray,fontSize:18,lineHeight:1,userSelect:"none",zIndex:2,letterSpacing:-3}}>⋮⋮</span>}
       {role==="instructor"&&isLead&&<button onClick={()=>onHideToggle(prayer.id,true)} style={{position:"absolute",top:10,left:10,background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"600",zIndex:2}}>Collapse</button>}
       {role==="instructor"&&<div style={{position:"absolute",top:10,right:14,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,zIndex:2}}>
         {!isLead&&<><span data-tut="tut-status-badge"><StatusBadge status={prayer.status}/></span>{prayer.status==="Learned"&&prayer.completion_date&&<span style={{fontSize:11,color:C.green,fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>✓ {prayer.completion_date}</span>}<span data-tut="tut-log-review"><LessonReviewInline prayer={prayer} onLinkUpdate={onLinkUpdate}/></span></>}
@@ -1398,6 +1407,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
               </span>
               :(hasAudio&&role!=="instructor")?null:<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
             {role==="instructor"&&isLead&&<button onClick={()=>setMediaOpen(e=>!e)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>{mediaOpen?"Hide Edit Media":"Edit Media"}</button>}
+            {onDelete&&<button onClick={()=>onDelete(prayer.id,prayer.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif",padding:"2px 4px",fontWeight:"700"}}>Delete</button>}
             {hasAudio&&!hasPdf
               ?<button onClick={()=>setShowMedia("audio")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.green}`,background:"#f0faf0",color:C.darkGreen,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>🎵 Play Audio</button>
               :null}
@@ -1516,6 +1526,9 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
   const [showAddPrayer,setShowAddPrayer]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [dragOverId,setDragOverId]=useState(null);
+  const canReorder=role==="instructor"&&instructorUser?.role==="admin";
   const [collapsedParts,setCollapsedParts]=useState(()=>{
     if(role==="learner") return {1:true,2:true,3:true,4:true};
     try{return JSON.parse(localStorage.getItem(`tbi_collapsed_${learnerId}`)||"{}");}catch{return {};}
@@ -1611,6 +1624,34 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   async function handleLinkUpdate(id,patch) {
     await DB.updatePrayer(id,patch);
     setPrayers(prev=>{const np=prev.map(p=>p.id===id?{...p,...patch}:p);np._att=prev._att;return np;});
+  }
+
+  async function handleDeletePrayer(id,name) {
+    if(!window.confirm(`Delete "${name}" from this learner's tracker? Status, notes, and review history for this card will be lost.`))return;
+    try{
+      await DB.deletePrayer(id);
+      setPrayers(prev=>{const np=prev.filter(p=>p.id!==id);np._att=prev._att;return np;});
+    }catch(e){console.error(e);alert("Could not delete this card. The prayers table may need a DELETE policy in Supabase.");}
+  }
+
+  async function handleReorderDrop(targetId) {
+    const srcId=dragId;
+    setDragId(null);setDragOverId(null);
+    if(!srcId||srcId===targetId)return;
+    const src=prayerList.find(p=>p.id===srcId);
+    const tgt=prayerList.find(p=>p.id===targetId);
+    if(!src||!tgt||src.part!==tgt.part)return;
+    const ordered=prayerList.filter(p=>p.part===src.part).slice().sort(defaultSort);
+    const from=ordered.findIndex(p=>p.id===srcId);
+    const to=ordered.findIndex(p=>p.id===targetId);
+    const [moved]=ordered.splice(from,1);
+    ordered.splice(to,0,moved);
+    const newOrder={};ordered.forEach((p,i)=>{newOrder[p.id]=i;});
+    const prevPrayers=prayers;
+    setPrayers(prev=>{const np=prev.map(p=>newOrder[p.id]!==undefined?{...p,sort_order:newOrder[p.id]}:p);np._att=prev._att;return np;});
+    try{
+      await Promise.all(ordered.filter(p=>(p.sort_order??null)!==newOrder[p.id]).map(p=>DB.updatePrayer(p.id,{sort_order:newOrder[p.id]})));
+    }catch(e){console.error(e);alert("Could not save the new order.");setPrayers(prevPrayers);}
   }
 
   async function handleHideToggle(id,hidden) {
@@ -1711,6 +1752,15 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
           defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
           voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
           simplified={simplified}
+          onDelete={role==="instructor"&&isLead?handleDeletePrayer:null}
+          reorder={canReorder?{
+            isDragging:dragId===p.id,
+            isOver:dragOverId===p.id&&dragId&&dragId!==p.id,
+            onStart:()=>setDragId(p.id),
+            onEnd:()=>{setDragId(null);setDragOverId(null);},
+            onOver:()=>{if(dragId&&prayerList.find(x=>x.id===dragId)?.part===part)setDragOverId(p.id);},
+            onDrop:()=>handleReorderDrop(p.id),
+          }:null}
         />)}
       </div>;
     })}
@@ -1769,6 +1819,9 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
     await DB.upsertAttendance(updated);
   }
 
+  const canEditAtt=role==="learner"||role==="parent"||isLead;
+  function isTbiChecked(v){return /tbi/i.test(v||"");}
+
   if(loading) return <LoadingSpinner message="Loading services…"/>;
   if(error) return <ErrorBanner message={error} onRetry={load}/>;
 
@@ -1777,9 +1830,14 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,marginBottom:16}}>Services Attended</h3>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:16}}>
       {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14}}>{label}</span></div>
-        <input value={att[`${key}_where`]||""} onChange={e=>(role==="learner"||role==="parent"||isLead)&&updateWhere(key,e.target.value)} readOnly={role==="instructor"&&!isLead} placeholder="Where?" style={{flex:1,minWidth:0,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",fontSize:12,fontFamily:"Raleway,sans-serif",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white"}}/>
-        <input type="date" value={att[key]||""} onChange={e=>(role==="learner"||role==="parent"||isLead)&&update(key,e.target.value)} readOnly={role==="instructor"&&!isLead} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:role==="instructor"&&!isLead?"#f8f9fa":"white",flexShrink:0}}/>
+        <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14,whiteSpace:"nowrap"}}>{label}</span></div>
+        <div style={{flex:1,display:"flex",justifyContent:"center"}}>
+          <input type="date" value={att[key]||""} onChange={e=>canEditAtt&&update(key,e.target.value)} readOnly={!canEditAtt} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:canEditAtt?"white":"#f8f9fa"}}/>
+        </div>
+        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6,fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"600",color:C.navy,cursor:canEditAtt?"pointer":"default",whiteSpace:"nowrap"}}>
+          <input type="checkbox" checked={isTbiChecked(att[`${key}_where`])} disabled={!canEditAtt} onChange={e=>canEditAtt&&updateWhere(key,e.target.checked?"TBI":"")} style={{accentColor:C.blue,width:15,height:15,cursor:canEditAtt?"pointer":"default"}}/>
+          TBI service
+        </label>
       </div>)}
     </div>
     <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
@@ -2478,7 +2536,7 @@ function LearnerInfoEditor({l,isMobile,onSave}) {
 
   return <div style={{borderTop:"1px solid #f0f2f5",paddingTop:14}}>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.1fr 1fr 0.7fr 1fr",gap:12,marginBottom:6,alignItems:"start"}}>
-      <div><div style={LS}>Instructor</div>
+      <div><div style={LS}>B'nei Mitzvah Instructor</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {Object.entries(INSTRUCTORS).map(([name,email])=><label key={name} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.navy,fontFamily:"Raleway,sans-serif",cursor:"pointer",flexWrap:"wrap"}}>
             <input type="checkbox" checked={instrDraft.includes(name)} onChange={()=>toggleInstructor(name)} style={{accentColor:C.blue}}/>
@@ -3162,6 +3220,7 @@ export default function App() {
         if(cancelled)return;
         setAssignedLearnerIds(new Set((rows||[]).map(r=>r.learner_id)));
       }).catch(e=>{console.error("Could not load learner assignments:",e);if(!cancelled)setAssignedLearnerIds(new Set());});
+      // Note: B'nei Mitzvah Instructor checkbox matches are merged at render time (see yourLearnerIds).
     } else {
       setAssignedLearnerIds(null);
     }
@@ -3318,10 +3377,17 @@ export default function App() {
 
   const activeLearner=role==="instructor"?learners.find(l=>l.id===selectedLearner):currentLearnerData;
   const isRSActive=activeLearner?.category==="rs_learner";
+  const yourLearnerIds=(()=>{
+    if(!assignedLearnerIds)return null;
+    const s=new Set(assignedLearnerIds);
+    const me=normalizeCode(instructorUser?.name);
+    if(me)learners.forEach(l=>{if(parseInstructorNames(l.instructor).some(n=>normalizeCode(n)===me))s.add(l.id);});
+    return s;
+  })();
   const tabs=(role==="instructor"
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat Attendance"}]
     :role==="parent"
-    ?[{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
+    ?[{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat Attendance"}]
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
   ).filter(t=>!isRSActive||t.id==="prayers");
   const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
@@ -3392,7 +3458,7 @@ export default function App() {
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
               style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`2px solid ${C.blue}`,background:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:"pointer",appearance:"none",paddingRight:32}}>
               <option value="" disabled>— Select a learner —</option>
-              {(instructorUser?.role==="team"||instructorUser?.role==="lead"||instructorUser?.role==="admin")&&assignedLearnerIds?(()=>{
+              {(instructorUser?.role==="team"||instructorUser?.role==="lead"||instructorUser?.role==="admin")&&yourLearnerIds?(()=>{
                 const byDate=(a,b)=>{
                   if(!a.date_of_service&&!b.date_of_service)return 0;
                   if(!a.date_of_service)return 1;
@@ -3401,8 +3467,8 @@ export default function App() {
                 };
                 const byLastName=(a,b)=>lastNameOf(a.name).localeCompare(lastNameOf(b.name));
                 const sortFn=(instructorUser.role==="lead"||instructorUser.role==="admin")?byDate:byLastName;
-                const mine=learners.filter(l=>assignedLearnerIds.has(l.id)).sort(sortFn);
-                const others=learners.filter(l=>!assignedLearnerIds.has(l.id)).sort(sortFn);
+                const mine=learners.filter(l=>yourLearnerIds.has(l.id)).sort(sortFn);
+                const others=learners.filter(l=>!yourLearnerIds.has(l.id)).sort(sortFn);
                 return <>
                   <option disabled>— Your Learners —</option>
                   {mine.map(l=><option key={l.id} value={l.id}>{l.name}{l.date_of_service?` — ${formatServiceDate(l.date_of_service)}`:""}</option>)}
