@@ -1420,7 +1420,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
       </div>
       {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"0 18px 12px"}}>
         {isLead&&prayer.pages&&prayer.pages.length>1&&<button onClick={()=>setPageStatusOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{pageStatusOpen?"▲ Page Status":"▼ Page Status"}</button>}
-        <button data-tut="tut-instructor-notes" onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:C.purple,background:"#f7f0ff",border:`1px solid ${C.purple}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
+        <button data-tut="tut-instructor-notes" onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:(prayer.notes_chat||[]).length?C.purple:C.midGray,background:(prayer.notes_chat||[]).length?"#f7f0ff":"none",border:(prayer.notes_chat||[]).length?`1px solid ${C.purple}44`:"1px solid #dee2e6",borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
       {pageStatusOpen&&role==="instructor"&&isLead&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate}/>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
@@ -1799,14 +1799,21 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
   }
   useEffect(()=>{load();},[learnerId]);
 
-  function isFriday(val){const d=new Date(val+"T12:00:00");return d.getDay()===5;}
-  function isSaturday(val){const d=new Date(val+"T12:00:00");return d.getDay()===6;}
+  // Snap any picked date to the nearest target weekday (5=Fri, 6=Sat).
+  function snapToWeekday(val,target){
+    const d=new Date(val+"T12:00:00");
+    if(isNaN(d))return val;
+    let diff=target-d.getDay();
+    if(diff>3)diff-=7;
+    if(diff<-3)diff+=7;
+    d.setDate(d.getDate()+diff);
+    const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${dd}`;
+  }
 
   async function update(key,val){
     if(val){
-      const isFri=key.startsWith("fri");
-      if(isFri&&!isFriday(val)){alert("Please select a Friday.");return;}
-      if(!isFri&&!isSaturday(val)){alert("Please select a Saturday.");return;}
+      val=snapToWeekday(val,key.startsWith("fri")?5:6);
     }
     const updated={...att,[key]:val,learner_id:learnerId};
     setAtt(updated);
