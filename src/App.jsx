@@ -298,7 +298,7 @@ async function buildMonthlyUpdateBundle(learner, sinceISO) {
   const att = (attRows||[])[0] || {};
   const attDone = ATT_ROW_DEFS.filter(([k])=>att[k]).length;
   const attThisMonth = ATT_ROW_DEFS.filter(([k])=>att[k]&&att[k]>=sinceISO);
-  const sortedPrayers = (prayers||[]).slice().sort((a,b)=>(a.part-b.part)||((a.sort_order??0)-(b.sort_order??0)));
+  const sortedPrayers = (prayers||[]).filter(p=>!isInHiddenSection(p,learner)).slice().sort((a,b)=>(a.part-b.part)||((a.sort_order??0)-(b.sort_order??0)));
   return {learner, prayers:sortedPrayers, assignments:assignments||[], attDone, attThisMonth};
 }
 
@@ -357,7 +357,89 @@ async function sendMonthlyUpdateEmail({learner, subject, html}) {
 const DEFAULT_PART_LABELS = {
   1:"Part 1", 2:"Part 2",
   3:"Part 3", 4:"Additional Learning",
+  5:"Torah Service", 6:"Shacharit",
 };
+
+// ── Optional per-learner sections (off by default; toggled in More Settings) ──
+const TORAH_SERVICE_PART = 5;
+const SHACHARIT_PART = 6;
+const TORAH_SERVICE_PRAYERS = [
+  {name:"Ein Kamocha",page:168,legacy:"Torah Service – Ein Kamocha"},
+  {name:"Av Harachamim - Ki Mitziyon",page:168,legacy:"Torah Service – Av Harachamim"},
+  {name:"Bei Ana Racheitz",page:170,legacy:"Torah Service – Bei Ana Racheitz"},
+  {name:"Yehalelu",page:183},
+  {name:"Eitz Chayim",page:184},
+];
+const SHACHARIT_PRAYERS = [
+  {name:"Shochein Ad",page:147},
+  {name:"Yishtabach",page:148},
+  {name:"Chatzi Kaddish",page:148},
+  {name:"Bar'chu",page:149},
+  {name:"Yotzer Or - Ein K'erkecha",page:150},
+  {name:"El Adon",page:151},
+  {name:"Titbarach Moshieinu - Or Chadash",page:152},
+  {name:"Ahavah Rabah",page:154},
+  {name:"L'dor Vador - Tzur Yisrael",page:157},
+  {name:"Avot",page:159},
+  {name:"G'vurot",page:160},
+  {name:"Kedusha",page:161},
+  {name:"Oseh Shalom",page:166},
+  {name:"Kaddish Shalem",page:167},
+];
+// Default Media rows were keyed "name|part" before the Torah Service move — fall back to the old key.
+const DEFAULT_MEDIA_ALIASES = Object.fromEntries(
+  TORAH_SERVICE_PRAYERS.filter(t=>t.legacy).map(t=>[`${t.name}|${TORAH_SERVICE_PART}`,`${t.legacy}|4`])
+);
+function lookupDefaultMedia(map,name,part){
+  const k=`${name}|${part}`;
+  if(map[k])return map[k];
+  const alias=DEFAULT_MEDIA_ALIASES[k];
+  return alias?map[alias]:undefined;
+}
+// Is this prayer in an optional section the learner has not turned on (or cannot have)?
+function isInHiddenSection(p,learner){
+  const rs=learner?.category==="rs_learner";
+  if(p.part===TORAH_SERVICE_PART)return rs||!learner?.show_torah_service;
+  if(p.part===SHACHARIT_PART)return rs||!learner?.show_shacharit;
+  return false;
+}
+function blankPrayerRow(learnerId,name,page,part,sortOrder){
+  return {id:genId(),learner_id:learnerId,name,page:page||null,part,status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:sortOrder,hidden_from_learner:false,learner_sort_order:null};
+}
+// Create (or move, for Torah Service) the cards for an optional section. Safe to run more than once.
+async function ensureOptionalSection(learnerId,section){
+  const rows=(await DB.getPrayers(learnerId))||[];
+  const isTorah=section==="torah";
+  const defs=isTorah?TORAH_SERVICE_PRAYERS:SHACHARIT_PRAYERS;
+  const part=isTorah?TORAH_SERVICE_PART:SHACHARIT_PART;
+  const toInsert=[];
+  for(let i=0;i<defs.length;i++){
+    const d=defs[i];
+    const existing=rows.find(r=>r.name===d.name)||(d.legacy?rows.find(r=>r.name===d.legacy):null);
+    if(existing){
+      if(existing.part!==part||existing.name!==d.name||existing.sort_order!==i){
+        await DB.updatePrayer(existing.id,{name:d.name,part,sort_order:i,page:existing.page??d.page});
+      }
+    } else {
+      toInsert.push(blankPrayerRow(learnerId,d.name,d.page,part,i));
+    }
+  }
+  if(toInsert.length)await DB.insertPrayers(toInsert);
+  // Carry over Default Media for renamed/moved Torah Service cards (one-time, global)
+  if(isTorah){
+    try{
+      const dmRows=(await DB.getDefaultMedia())||[];
+      for(const d of defs.filter(x=>x.legacy)){
+        const hasNew=dmRows.some(r=>r.prayer_name===d.name&&Number(r.part)===part);
+        const old=dmRows.find(r=>r.prayer_name===d.legacy&&Number(r.part)===4);
+        if(!hasNew&&old){
+          const {id,created_at,...rest}=old;
+          await DB.upsertDefaultMedia({...rest,id:genId(),prayer_name:d.name,part});
+        }
+      }
+    }catch(e){console.error("Default Media carry-over failed:",e);}
+  }
+}
 
 const DEFAULT_PRAYERS = [
   {name:"Torah Blessing – Before",page:172,part:1},
@@ -379,11 +461,8 @@ const DEFAULT_PRAYERS = [
   {name:"Torah Service – Shema-Echad-Gadlu",page:171,part:3},
   {name:"V'shamru & Saturday Morning Kiddush",page:77,part:3},
   {name:"Friday Night Kiddush",page:55,part:3},
-  {name:"Torah Service – Ein Kamocha",page:168,part:4},
-  {name:"Torah Service – Av Harachamim",page:168,part:4},
   {name:"Shalom Aleichem",page:5,part:4},
   {name:"Aleinu",page:56,part:4},
-  {name:"Torah Service – Bei Ana Racheitz",page:170,part:4},
 ];
 
 const STATUS_OPTIONS = ["Not Started","In Progress","Needs Review","Learned"];
@@ -1657,7 +1736,7 @@ function DefaultPagesSection({dm,item,applyDefault}) {
 }
 
 // ── Prayer Tracker ─────────────────────────────────────────────────────────
-function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false}) {
+function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,mediaRefreshKey=0,learnerVoiceTrack=null,simplified=false,sectionsKey=""}) {
   const {isMobile}=useBreakpoint();
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});
   const [loading,setLoading]=useState(true);const [error,setError]=useState(null);
@@ -1666,7 +1745,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const [dragOverId,setDragOverId]=useState(null);
   const canReorder=role==="instructor"&&instructorUser?.role==="admin";
   const [collapsedParts,setCollapsedParts]=useState(()=>{
-    if(role==="learner") return {1:true,2:true,3:true,4:true};
+    if(role==="learner") return {1:true,2:true,3:true,4:true,5:true,6:true};
     try{return JSON.parse(localStorage.getItem(`tbi_collapsed_${learnerId}`)||"{}");}catch{return {};}
   });
   useEffect(()=>{
@@ -1704,7 +1783,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
     } catch(e){console.error(e);setError("Failed to load prayers. Check your connection.");}
     setLoading(false);
   }
-  useEffect(()=>{load();},[learnerId,mediaRefreshKey]);
+  useEffect(()=>{load();},[learnerId,mediaRefreshKey,sectionsKey]);
   useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
 
   function handleSetDefaultMedia(prayerName,part,row){
@@ -1714,7 +1793,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const attObj=prayers._att||{};
   const attKeys=["fri1","fri2","fri3","fri4","sat1","sat2","sat3","sat4","sat5","sat6"];
   const attDone=attKeys.filter(k=>attObj[k]).length;
-  const prayerList=Array.isArray(prayers)?prayers:[];
+  const prayerList=(Array.isArray(prayers)?prayers:[]).filter(p=>!isInHiddenSection(p,currentLearner));
   const visiblePrayerList=role==="learner"?prayerList.filter(p=>!p.hidden_from_learner&&!(hideNotStarted&&p.status==="Not Started")):prayerList;
   const completed=visiblePrayerList.filter(p=>p.status==="Learned").length;
   const parts=[...new Set(visiblePrayerList.map(p=>p.part))].sort();
@@ -1842,7 +1921,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
         key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
         onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
         onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
-        defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
+        defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
         voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
         simplified={simplified}
         hideStatus
@@ -1856,7 +1935,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
           key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
-          defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
+          defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
           voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
           simplified={simplified}
           hideStatus
@@ -1885,7 +1964,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
           key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
           onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
-          defaultMedia={defaultMediaMap[dmKey(p.name,p.part)]}
+          defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
           voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
           simplified={simplified}
           onDelete={role==="instructor"&&isLead?handleDeletePrayer:null}
@@ -2148,7 +2227,7 @@ function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRe
 // ── Linked Prayers Selector ────────────────────────────────────────────────
 function LinkedPrayersSelector({learnerId,selected,onChange}) {
   const [prayers,setPrayers]=useState([]);
-  useEffect(()=>{if(learnerId)DB.getPrayers(learnerId).then(r=>setPrayers((r||[]).filter(p=>!p.hidden_from_learner)));},[learnerId]);
+  useEffect(()=>{if(learnerId)Promise.all([DB.getPrayers(learnerId),DB.getLearner(learnerId)]).then(([r,lr])=>setPrayers((r||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,lr))));},[learnerId]);
   if(!prayers.length) return null;
   function toggle(id){onChange(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);}
   return <div style={{marginBottom:10}}>
@@ -2768,6 +2847,35 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
   </>;
 }
 
+// ── Optional section toggles (Torah Service, Shacharit) ──────────────────
+function OptionalSectionToggles({l,onSave}) {
+  const [busy,setBusy]=useState(null);
+  async function toggle(field,section,on){
+    setBusy(field);
+    try{
+      if(on)await ensureOptionalSection(l.id,section);
+      const patch={...l,[field]:on};
+      await DB.upsertLearner(patch);
+      onSave(patch);
+    }catch(e){
+      console.error(e);
+      alert(`Could not update this section. Make sure the ${field} column exists on the learners table in Supabase.`);
+    }
+    setBusy(null);
+  }
+  const box=(field,section,label,count)=><label style={{display:"flex",alignItems:"center",gap:8,cursor:busy?"wait":"pointer",fontFamily:"Raleway,sans-serif",fontSize:13,fontWeight:"700",color:C.navy}}>
+    <input type="checkbox" checked={!!l[field]} disabled={!!busy} onChange={e=>toggle(field,section,e.target.checked)} style={{accentColor:C.blue,width:15,height:15}}/>
+    {label}<span style={{fontWeight:"600",color:C.midGray,fontSize:11}}>{busy===field?"Saving…":`(${count} prayers)`}</span>
+  </label>;
+  return <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
+    <div style={LS}>Optional Sections</div>
+    <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+      {box("show_torah_service","torah","Show Torah Service",TORAH_SERVICE_PRAYERS.length)}
+      {box("show_shacharit","shacharit","Show Shacharit",SHACHARIT_PRAYERS.length)}
+    </div>
+  </div>;
+}
+
 // ── Instructor Learner Card ────────────────────────────────────────────────
 function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,editingKey,setEditingKey,saveAccessKey,onSave,isLead=true,instructorUser=null}) {
   const [tier2Open,setTier2Open]=useState(false);
@@ -2827,6 +2935,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
           </select>
         </div>
       </div>}
+      {isLead&&l.category!=="rs_learner"&&<OptionalSectionToggles l={l} onSave={onSave}/>}
       {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input key={`agree-${l.id}`} defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
       <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
         <HideNotStartedToggle learnerId={l.id}/>
@@ -3176,13 +3285,14 @@ function SimplifiedLearnerHome({learnerId,onChoose}) {
         const todayISO=today.toISOString().split("T")[0];
         const start=new Date(today);start.setHours(0,0,0,0);start.setDate(today.getDate()-today.getDay());
         const end=new Date(start);end.setDate(start.getDate()+7);
-        const [prayerRows,attRows,sessionRows,assignmentRows]=await Promise.all([
+        const [prayerRows,attRows,sessionRows,assignmentRows,homeLearner]=await Promise.all([
           DB.getPrayers(learnerId),
           DB.getAttendance(learnerId),
           DB.getSessions(learnerId),
-          DB.getAssignments(learnerId)
+          DB.getAssignments(learnerId),
+          DB.getLearner(learnerId)
         ]);
-        const visible=(prayerRows||[]).filter(p=>!p.hidden_from_learner);
+        const visible=(prayerRows||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,homeLearner));
         const prayerTotal=visible.length;
         const prayerDone=visible.filter(p=>p.status==="Learned").length;
         const att=(attRows||[])[0]||{};
@@ -3683,7 +3793,7 @@ export default function App() {
 
       {(selectedLearner||(role==="parent"&&learnerId))&&<>
         {activeTab==="home"&&role==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
-        {activeTab==="prayers"    &&<PrayerTracker  learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  sectionsKey={`${activeLearner?.show_torah_service?1:0}${activeLearner?.show_shacharit?1:0}${activeLearner?.category||""}`} learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&!isRSActive&&<Assignments    learnerId={selectedLearner||learnerId} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="services"   &&!isRSActive&&<ServiceAttendance learnerId={selectedLearner||learnerId} role={role} isLead={isLead}/>}
       </>}
