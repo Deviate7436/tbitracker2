@@ -148,9 +148,12 @@ const DB = {
 
   // Instructors
   getInstructor: async(key)=>{
-    const res=await fetch(`${SUPA_URL}/rest/v1/instructors?access_key=ilike.${encodeURIComponent(key)}&limit=1`,{headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});
+    const res=await fetch(`${SUPA_URL}/rest/v1/instructors?select=*`,{headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});
     if(!res.ok){const e=await res.text();console.error("getInstructor error:",e);return null;}
-    const rows=await res.json();return rows[0]||null;
+    const rows=await res.json();
+    const want=normalizeCode(key);
+    if(!want)return null;
+    return (rows||[]).find(r=>r.access_key&&normalizeCode(r.access_key)===want)||null;
   },
   getAllInstructors: () => sb("instructors?select=*&order=name"),
   insertInstructor: (row) => sb("instructors", "POST", row, {"Prefer":"return=representation"}),
@@ -509,6 +512,32 @@ async function fetchAsArrayBuffer(candidates) {
 const PDFJS_MODULE_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
 let pdfJsModulePromise = null;
+const PDFLIB_MODULE_URL = "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm";
+let pdfLibModulePromise = null;
+async function loadPdfLibModule() {
+  if (!pdfLibModulePromise) {
+    const dynamicImport = new Function("url", "return import(url)");
+    pdfLibModulePromise = dynamicImport(PDFLIB_MODULE_URL).catch(e => { pdfLibModulePromise = null; throw e; });
+  }
+  return pdfLibModulePromise;
+}
+// Split a multi-page PDF File into one single-page File per page.
+async function splitPdfIntoPages(file) {
+  const { PDFDocument } = await loadPdfLibModule();
+  const src = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+  const count = src.getPageCount();
+  const base = (file.name || "document.pdf").replace(/\.pdf$/i, "");
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const doc = await PDFDocument.create();
+    const [pg] = await doc.copyPages(src, [i]);
+    doc.addPage(pg);
+    const bytes = await doc.save();
+    out.push(new File([bytes], `${base} - p${i + 1}.pdf`, { type: "application/pdf" }));
+  }
+  return out;
+}
+
 async function loadPdfJsModule() {
   if (!pdfJsModulePromise) {
     const dynamicImport = new Function("url", "return import(url)");
@@ -545,20 +574,60 @@ function DownloadIconButton({onClick,title,color=C.navy}) {
   </button>;
 }
 
-let DING_AUDIO=null;
-function getDingAudio() {
-  if(!DING_AUDIO){
-    try{DING_AUDIO=new Audio(`data:audio/mp3;base64,${DING_B64}`);DING_AUDIO.preload="auto";DING_AUDIO.volume=0.9;DING_AUDIO.load();}catch(e){DING_AUDIO=null;}
+// ── Ding / chime sound (Web Audio: one shared context, pre-decoded buffer) ──
+let SOUND_CTX=null;
+let DING_BUFFER=null;
+let DING_DECODE_PROMISE=null;
+function getSoundCtx() {
+  if(!SOUND_CTX){
+    try{const AC=window.AudioContext||window.webkitAudioContext;if(AC)SOUND_CTX=new AC();}catch(e){SOUND_CTX=null;}
   }
-  return DING_AUDIO;
+  return SOUND_CTX;
+}
+function prepareDingSound() {
+  const ctx=getSoundCtx();
+  if(!ctx||DING_BUFFER||DING_DECODE_PROMISE)return DING_DECODE_PROMISE;
+  try{
+    const bin=atob(DING_B64);
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    DING_DECODE_PROMISE=new Promise(resolve=>{
+      const ok=buf=>{DING_BUFFER=buf;resolve(buf);};
+      const fail=()=>{DING_DECODE_PROMISE=null;resolve(null);};
+      try{const r=ctx.decodeAudioData(bytes.buffer,ok,fail);if(r&&r.then)r.then(ok).catch(fail);}catch(e){fail();}
+    });
+  }catch(e){DING_DECODE_PROMISE=null;}
+  return DING_DECODE_PROMISE;
+}
+function wakeSoundCtx() {
+  const ctx=getSoundCtx();
+  if(!ctx)return;
+  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
+  // iOS: play a silent 1-sample buffer inside a user gesture to fully unlock output
+  try{const b=ctx.createBuffer(1,1,22050);const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start(0);}catch(e){}
+  prepareDingSound();
+}
+function playBuffer(buf) {
+  const ctx=getSoundCtx();
+  const src=ctx.createBufferSource();
+  const g=ctx.createGain();g.gain.value=0.9;
+  src.buffer=buf;src.connect(g);g.connect(ctx.destination);
+  src.start(0);
 }
 function playDingSound() {
-  const a=getDingAudio();
-  if(!a){playChime();return;}
-  try{a.currentTime=0;const p=a.play();if(p&&p.catch)p.catch(()=>playChime());}catch(e){playChime();}
+  const ctx=getSoundCtx();
+  if(!ctx)return;
+  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
+  if(DING_BUFFER){try{playBuffer(DING_BUFFER);}catch(e){playChime();}return;}
+  const pending=prepareDingSound();
+  if(pending){pending.then(buf=>{try{buf?playBuffer(buf):playChime();}catch(e){playChime();}});}
+  else playChime();
 }
 function playChime() {
-  try{const ctx=new(window.AudioContext||window.webkitAudioContext)();[523,659,784,1047].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,ctx.currentTime+i*0.12);g.gain.linearRampToValueAtTime(0.35,ctx.currentTime+i*0.12+0.05);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.12+0.8);o.start(ctx.currentTime+i*0.12);o.stop(ctx.currentTime+i*0.12+0.9);});}catch(e){}
+  const ctx=getSoundCtx();
+  if(!ctx)return;
+  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
+  try{const t0=ctx.currentTime;[523,659,784,1047].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,t0+i*0.12);g.gain.linearRampToValueAtTime(0.35,t0+i*0.12+0.05);g.gain.exponentialRampToValueAtTime(0.001,t0+i*0.12+0.8);o.start(t0+i*0.12);o.stop(t0+i*0.12+0.9);});}catch(e){}
 }
 
 const LS={display:"block",fontSize:11,fontWeight:"700",color:C.midGray,textTransform:"uppercase",letterSpacing:1,marginBottom:6};
@@ -995,6 +1064,7 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
               <div><div style={LS}>Lower Voice Audio</div><AudioUploadControl label="Lower Voice Audio" value={dm.audio_lower_url||dm.audio} name={dm.audio_lower_name||dm.audio_name} onUploaded={(url,label)=>applyDefault(item,{audio_lower_url:url,audio_lower_name:label,audio:url,audio_name:label})} onRemove={()=>applyDefault(item,{audio_lower_url:null,audio_lower_name:null,audio:null,audio_name:null})}/></div>
               <div><div style={LS}>Higher Voice Audio</div><AudioUploadControl label="Higher Voice Audio" value={dm.audio_higher_url} name={dm.audio_higher_name} onUploaded={(url,label)=>applyDefault(item,{audio_higher_url:url,audio_higher_name:label})} onRemove={()=>applyDefault(item,{audio_higher_url:null,audio_higher_name:null})}/></div>
             </div>
+            <DefaultPagesSection dm={dm} item={item} applyDefault={applyDefault}/>
           </div>;
         })}
       </div>}
@@ -1328,7 +1398,8 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const selectedDefaultAudio=getDefaultAudioForVoice(defaultMedia,voiceTrack);
   const effectiveAudio=prayer.audio||selectedDefaultAudio.url||null;
   const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
-  const hasMultiPage=!!(prayer.pages&&prayer.pages.length>1);
+  const effectivePages=(prayer.pages&&prayer.pages.length)?prayer.pages:((defaultMedia&&Array.isArray(defaultMedia.pages))?defaultMedia.pages:[]);
+  const hasMultiPage=effectivePages.length>1;
   const hasPdf=!!effectivePdf||hasMultiPage;const hasAudio=!!effectiveAudio;
 
   const chatContainerRef=useRef(null);
@@ -1349,7 +1420,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   }
 
   if(hidden&&role==="instructor") return <>
-    {showMultiPage&&prayer.pages&&prayer.pages.length>1&&<MultiPageViewer pages={prayer.pages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
+    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",paddingLeft:isMobile?70:76,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"relative"}}>
@@ -1367,7 +1438,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
     : "white";
   const isNotStarted = (role==="learner"||role==="parent") && prayer.status==="Not Started";
   return <>
-    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={prayer.pages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
+    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
     {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div
@@ -1402,7 +1473,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             {hasPdf
               ?<span data-tut="tut-view-media">{hasMultiPage
-                ?<button onClick={()=>setShowMultiPage(true)} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Pages ({prayer.pages.length})</button>
+                ?<button onClick={()=>setShowMultiPage(true)} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Pages ({effectivePages.length})</button>
                 :<button onClick={()=>setShowMedia("pdf")} style={{padding:"4px 12px",borderRadius:6,border:`1.5px solid ${C.blue}`,background:C.lightBlue,color:C.blue,fontSize:12,cursor:"pointer",fontWeight:"700",fontFamily:"Raleway,sans-serif"}}>📄 View Page & Audio</button>}
               </span>
               :(hasAudio&&role!=="instructor")?null:<span style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>No PDF</span>}
@@ -1486,28 +1557,67 @@ function PageStatusPanel({prayer,onLinkUpdate}) {
 }
 
 // ── Multi-Page Editor ─────────────────────────────────────────────────────
-function MultiPageEditor({prayer,onLinkUpdate}) {
-  const pages=prayer.pages||[];
-  const [adding,setAdding]=useState(false);
+// ── Pages Editor (shared by learner cards and Default Media) ─────────────
+function PagesEditor({pages,onSave,onSinglePage}) {
+  const list=pages||[];
+  const [splitting,setSplitting]=useState(false);
+  const [progress,setProgress]=useState("");
+  const fileRef=useRef(null);
+  async function save(next){
+    try{await onSave(next);}
+    catch(e){console.error(e);alert("Could not save pages. "+(e?.message||""));}
+  }
   async function addPage(){
-    const newPage={id:genId(),label:`Page ${pages.length+1}`,pdf_url:null,pdf_name:null,audio_url:null,audio_name:null};
-    await onLinkUpdate(prayer.id,{pages:[...pages,newPage]});
-    setAdding(false);
+    await save([...list,{id:genId(),label:`Page ${list.length+1}`,pdf_url:null,pdf_name:null,audio_url:null,audio_name:null}]);
   }
-  async function removePage(pid){
-    await onLinkUpdate(prayer.id,{pages:pages.filter(p=>p.id!==pid)});
-  }
-  async function updatePage(pid,patch){
-    await onLinkUpdate(prayer.id,{pages:pages.map(p=>p.id===pid?{...p,...patch}:p)});
+  async function removePage(pid){await save(list.filter(p=>p.id!==pid));}
+  async function updatePage(pid,patch){await save(list.map(p=>p.id===pid?{...p,...patch}:p));}
+  async function handleSplit(file){
+    if(!file)return;
+    setSplitting(true);setProgress("Reading PDF…");
+    try{
+      const parts=await splitPdfIntoPages(file);
+      if(parts.length===0)throw new Error("No pages found in this PDF.");
+      if(parts.length===1){
+        if(onSinglePage){
+          setProgress("Uploading…");
+          const url=await uploadPdfToStorage(file);
+          await onSinglePage(url,file.name);
+          alert("This PDF has only one page, so it was saved as the regular single PDF.");
+        } else {
+          alert("This PDF has only one page — use the single PDF upload instead.");
+        }
+        return;
+      }
+      if(list.length>0&&!window.confirm(`Replace the ${list.length} existing page${list.length!==1?"s":""} with ${parts.length} new pages? Audio already attached to each page number is kept.`))return;
+      const next=[];
+      for(let i=0;i<parts.length;i++){
+        setProgress(`Uploading page ${i+1} of ${parts.length}…`);
+        const url=await uploadPdfToStorage(parts[i]);
+        const prev=list[i]||{};
+        next.push({id:prev.id||genId(),label:`Page ${i+1}`,pdf_url:url,pdf_name:parts[i].name,audio_url:prev.audio_url||null,audio_name:prev.audio_name||null,...(prev.status?{status:prev.status}:{})});
+      }
+      await save(next);
+    }catch(e){
+      console.error(e);
+      alert("Could not split this PDF. "+(e?.message||""));
+    }finally{
+      setSplitting(false);setProgress("");
+      if(fileRef.current)fileRef.current.value="";
+    }
   }
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13}}>Multi-Page Media</span>
-      <span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{pages.length} page{pages.length!==1?"s":""}</span>
-      <Btn small color={C.blue} onClick={addPage}>+ Add Page</Btn>
-      {pages.length>0&&<Btn small outline color={C.red} onClick={()=>onLinkUpdate(prayer.id,{pages:[]})}>Clear All</Btn>}
+      <span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>{list.length} page{list.length!==1?"s":""}</span>
+      <label style={{padding:"4px 10px",borderRadius:7,background:splitting?"#e9ecef":C.blue,color:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:12,cursor:splitting?"not-allowed":"pointer"}}>
+        {splitting?(progress||"Working…"):"⇪ Upload & Split PDF"}
+        <input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={splitting} style={{display:"none"}} onChange={e=>handleSplit(e.target.files&&e.target.files[0])}/>
+      </label>
+      <Btn small outline color={C.blue} onClick={addPage} disabled={splitting}>+ Add Page</Btn>
+      {list.length>0&&<Btn small outline color={C.red} disabled={splitting} onClick={()=>{if(window.confirm("Remove all pages?"))save([]);}}>Clear All</Btn>}
     </div>
-    {pages.map((pg,i)=><div key={pg.id} style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+    {list.map((pg,i)=><div key={pg.id} style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
         <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13}}>Page {i+1}</span>
         <button onClick={()=>removePage(pg.id)} style={{marginLeft:"auto",background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>
@@ -1517,6 +1627,32 @@ function MultiPageEditor({prayer,onLinkUpdate}) {
         <div><div style={LS}>Audio</div><AudioUploadControl label={`Page ${i+1} Audio`} value={pg.audio_url} name={pg.audio_name} onUploaded={(url,label)=>updatePage(pg.id,{audio_url:url,audio_name:label})} onRemove={()=>updatePage(pg.id,{audio_url:null,audio_name:null})}/></div>
       </div>
     </div>)}
+  </div>;
+}
+
+function MultiPageEditor({prayer,onLinkUpdate}) {
+  return <PagesEditor
+    pages={prayer.pages||[]}
+    onSave={next=>onLinkUpdate(prayer.id,{pages:next})}
+    onSinglePage={(url,name)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:name})}
+  />;
+}
+
+// Collapsible multi-page section inside a Default Media card (own component so its state is not inside a .map)
+function DefaultPagesSection({dm,item,applyDefault}) {
+  const [open,setOpen]=useState(false);
+  const count=(dm.pages||[]).length;
+  return <div style={{marginTop:12,paddingTop:10,borderTop:"1px dashed #dee2e6"}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:12,color:C.navy}}>
+      {open?"▲":"▼"} Multi-Page Media{count?` (${count} page${count!==1?"s":""})`:""}
+    </button>
+    {open&&<div style={{marginTop:10}}>
+      <PagesEditor
+        pages={dm.pages||[]}
+        onSave={next=>applyDefault(item,{pages:next})}
+        onSinglePage={(url,name)=>applyDefault(item,{pdf:url,pdf_name:name})}
+      />
+    </div>}
   </div>;
 }
 
@@ -1835,8 +1971,8 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
   const attDone=rows.filter(([key])=>att[key]).length;
   return <div>
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,marginBottom:16}}>Services Attended</h3>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:16}}>
-      {rows.map(([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+    {(()=>{
+      const renderAttRow=([key,label])=><div key={key} style={{background:"white",borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}}>{att[key]&&<span style={{color:C.green}}>✓</span>}<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"600",color:C.navy,fontSize:14,whiteSpace:"nowrap"}}>{label}</span></div>
         <div style={{flex:1,display:"flex",justifyContent:"center"}}>
           <input type="date" value={att[key]||""} onChange={e=>canEditAtt&&update(key,e.target.value)} readOnly={!canEditAtt} style={{fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid #dee2e6",color:C.navy,background:canEditAtt?"white":"#f8f9fa"}}/>
@@ -1845,8 +1981,19 @@ function ServiceAttendance({learnerId,role,isLead=true}) {
           <input type="checkbox" checked={isTbiChecked(att[`${key}_where`])} disabled={!canEditAtt} onChange={e=>canEditAtt&&updateWhere(key,e.target.checked?"TBI":"")} style={{accentColor:C.blue,width:15,height:15,cursor:canEditAtt?"pointer":"default"}}/>
           TBI service
         </label>
-      </div>)}
-    </div>
+      </div>;
+      const colHead=t=><div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.midGray,fontSize:11,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{t}</div>;
+      return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,marginBottom:16,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {colHead("Friday Services")}
+          {rows.filter(([k])=>k.startsWith("fri")).map(renderAttRow)}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {colHead("Saturday Services")}
+          {rows.filter(([k])=>k.startsWith("sat")).map(renderAttRow)}
+        </div>
+      </div>;
+    })()}
     <div style={{background:"white",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.midGray,fontSize:13}}>Services Attended</span>
@@ -2651,7 +2798,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
         <div><div style={LS}>Learner Passcode</div>
           {editingKey===l.id?<div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input id="keyInput" defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
+            <input id="keyInput" key={`key-${l.id}`} defaultValue={l.access_key} onChange={e=>e.target.value=e.target.value.toUpperCase()} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
             <button onClick={()=>saveAccessKey(l,(document.getElementById("keyInput")).value)} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>Save</button>
             <button onClick={()=>setEditingKey(null)} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
           </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -2680,7 +2827,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
           </select>
         </div>
       </div>}
-      {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
+      {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input key={`agree-${l.id}`} defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
       <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
         <HideNotStartedToggle learnerId={l.id}/>
       </div>
@@ -3196,14 +3343,16 @@ export default function App() {
   const [learnerViewMode,setLearnerViewMode]=useState("simplified");
   const [showDing,setShowDing]=useState(false);
   useEffect(()=>{
-    getDingAudio();
-    function unlock(){
-      const a=getDingAudio();
-      if(a){try{a.muted=true;const pr=a.play();if(pr&&pr.then)pr.then(()=>{a.pause();a.currentTime=0;a.muted=false;}).catch(()=>{a.muted=false;});else{a.muted=false;}}catch(e){a.muted=false;}}
-      window.removeEventListener("pointerdown",unlock);
-    }
-    window.addEventListener("pointerdown",unlock,{once:true});
-    return ()=>window.removeEventListener("pointerdown",unlock);
+    prepareDingSound();
+    function wake(){wakeSoundCtx();}
+    window.addEventListener("pointerdown",wake,true);
+    window.addEventListener("touchend",wake,true);
+    window.addEventListener("keydown",wake,true);
+    return ()=>{
+      window.removeEventListener("pointerdown",wake,true);
+      window.removeEventListener("touchend",wake,true);
+      window.removeEventListener("keydown",wake,true);
+    };
   },[]);
   const [showAddLearner,setShowAddLearner]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
@@ -3506,7 +3655,7 @@ export default function App() {
       {selectedLearner&&role==="instructor"&&(()=>{
         const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
         if(!l)return null;
-        return <InstructorLearnerCard isLead={isLead} instructorUser={instructorUser}
+        return <InstructorLearnerCard key={l.id} isLead={isLead} instructorUser={instructorUser}
           l={l} isMobile={isMobile}
           formatLastSignedIn={formatLastSignedIn}
           formatServiceDate={formatServiceDate}
