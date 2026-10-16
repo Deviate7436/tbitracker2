@@ -759,60 +759,95 @@ function DownloadIconButton({onClick,title,color=C.navy}) {
   </button>;
 }
 
-// ── Ding / chime sound (Web Audio: one shared context, pre-decoded buffer) ──
+// ── Ding / chime sound ──────────────────────────────────────────────────────
+// First ding uses an <audio> element (plays directly from the click in every
+// browser). Web Audio is created on the first user gesture and used only once
+// it is confirmed "running" (Firefox/Chrome start it muted; iOS can "interrupt").
 let SOUND_CTX=null;
 let DING_BUFFER=null;
 let DING_DECODE_PROMISE=null;
-function getSoundCtx() {
-  if(!SOUND_CTX){
+let DING_AUDIO_EL=null;
+function getSoundCtx(create=true) {
+  if(!SOUND_CTX&&create){
     try{const AC=window.AudioContext||window.webkitAudioContext;if(AC)SOUND_CTX=new AC();}catch(e){SOUND_CTX=null;}
   }
   return SOUND_CTX;
 }
+function soundCtxResume(ctx) {
+  if(!ctx||ctx.state==="running")return;
+  try{const r=ctx.resume();if(r&&r.catch)r.catch(()=>{});}catch(e){}
+}
+function getDingAudioEl() {
+  if(!DING_AUDIO_EL){
+    try{
+      const el=new Audio("data:audio/mpeg;base64,"+DING_B64);
+      el.preload="auto";el.volume=0.9;
+      try{el.load();}catch(e){}
+      DING_AUDIO_EL=el;
+    }catch(e){DING_AUDIO_EL=null;}
+  }
+  return DING_AUDIO_EL;
+}
 function prepareDingSound() {
-  const ctx=getSoundCtx();
+  const ctx=getSoundCtx(false);
   if(!ctx||DING_BUFFER||DING_DECODE_PROMISE)return DING_DECODE_PROMISE;
   try{
     const bin=atob(DING_B64);
     const bytes=new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
     DING_DECODE_PROMISE=new Promise(resolve=>{
-      const ok=buf=>{DING_BUFFER=buf;resolve(buf);};
-      const fail=()=>{DING_DECODE_PROMISE=null;resolve(null);};
+      let done=false;
+      const ok=buf=>{if(done)return;done=true;DING_BUFFER=buf;resolve(buf);};
+      const fail=()=>{if(done)return;done=true;DING_DECODE_PROMISE=null;resolve(null);};
       try{const r=ctx.decodeAudioData(bytes.buffer,ok,fail);if(r&&r.then)r.then(ok).catch(fail);}catch(e){fail();}
     });
   }catch(e){DING_DECODE_PROMISE=null;}
   return DING_DECODE_PROMISE;
 }
+// Called from a user gesture (pointerdown/touchend/keydown): create + unmute Web Audio.
 function wakeSoundCtx() {
-  const ctx=getSoundCtx();
+  const ctx=getSoundCtx(true);
+  getDingAudioEl();
   if(!ctx)return;
-  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
+  soundCtxResume(ctx);
   // iOS: play a silent 1-sample buffer inside a user gesture to fully unlock output
   try{const b=ctx.createBuffer(1,1,22050);const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start(0);}catch(e){}
   prepareDingSound();
 }
 function playBuffer(buf) {
-  const ctx=getSoundCtx();
+  const ctx=getSoundCtx(false);
   const src=ctx.createBufferSource();
   const g=ctx.createGain();g.gain.value=0.9;
   src.buffer=buf;src.connect(g);g.connect(ctx.destination);
-  src.start(0);
+  src.start(ctx.currentTime+0.02);
+}
+function playDingViaElement() {
+  const el=getDingAudioEl();
+  if(!el)return Promise.reject(new Error("no audio element"));
+  try{el.pause();el.currentTime=0;}catch(e){}
+  const r=el.play();
+  return (r&&r.then)?r:Promise.resolve();
 }
 function playDingSound() {
-  const ctx=getSoundCtx();
-  if(!ctx)return;
-  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
-  if(DING_BUFFER){try{playBuffer(DING_BUFFER);}catch(e){playChime();}return;}
-  const pending=prepareDingSound();
-  if(pending){pending.then(buf=>{try{buf?playBuffer(buf):playChime();}catch(e){playChime();}});}
-  else playChime();
+  const ctx=getSoundCtx(false);
+  // Web Audio only when already unmuted and decoded
+  if(ctx&&ctx.state==="running"&&DING_BUFFER){
+    try{playBuffer(DING_BUFFER);return;}catch(e){}
+  }
+  // Otherwise the <audio> element, which the click itself unlocks
+  wakeSoundCtx();
+  playDingViaElement().catch(()=>{
+    const c=getSoundCtx(true);if(!c)return;
+    const go=()=>{try{DING_BUFFER?playBuffer(DING_BUFFER):playChime();}catch(e){playChime();}};
+    if(c.state==="running")go();
+    else{try{const r=c.resume();(r&&r.then)?r.then(go).catch(()=>{}):go();}catch(e){}}
+  });
 }
 function playChime() {
-  const ctx=getSoundCtx();
+  const ctx=getSoundCtx(true);
   if(!ctx)return;
-  if(ctx.state==="suspended"){try{ctx.resume();}catch(e){}}
-  try{const t0=ctx.currentTime;[523,659,784,1047].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,t0+i*0.12);g.gain.linearRampToValueAtTime(0.35,t0+i*0.12+0.05);g.gain.exponentialRampToValueAtTime(0.001,t0+i*0.12+0.8);o.start(t0+i*0.12);o.stop(t0+i*0.12+0.9);});}catch(e){}
+  soundCtxResume(ctx);
+  try{const t0=ctx.currentTime+0.02;[523,659,784,1047].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,t0+i*0.12);g.gain.linearRampToValueAtTime(0.35,t0+i*0.12+0.05);g.gain.exponentialRampToValueAtTime(0.001,t0+i*0.12+0.8);o.start(t0+i*0.12);o.stop(t0+i*0.12+0.9);});}catch(e){}
 }
 
 const LS={display:"block",fontSize:11,fontWeight:"700",color:C.midGray,textTransform:"uppercase",letterSpacing:1,marginBottom:6};
@@ -902,15 +937,16 @@ function NiceJobModal({onClose}) {
 
 function DingModal({onClose}) {
   const [dinged,setDinged]=useState(false);const [stars,setStars]=useState([]);
-  function handleDing(){playDingSound();setDinged(true);setStars(Array.from({length:14},(_,i)=>({id:i,x:20+Math.random()*60,y:15+Math.random()*70,size:14+Math.random()*22,delay:Math.random()*0.5})));setTimeout(onClose,2400);}
+  const dingedRef=useRef(false);
+  function handleDing(){if(dingedRef.current)return;dingedRef.current=true;playDingSound();setDinged(true);setStars(Array.from({length:14},(_,i)=>({id:i,x:20+Math.random()*60,y:15+Math.random()*70,size:14+Math.random()*22,delay:Math.random()*0.5})));setTimeout(onClose,2400);}
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
-    <div style={{background:C.cream,borderRadius:24,padding:"48px 52px",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.45)",maxWidth:380,width:"90%"}}>
+    <div role="button" tabIndex={0} aria-label="Ding" onClick={handleDing} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();handleDing();}}} style={{background:C.cream,borderRadius:24,padding:"48px 52px",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.45)",maxWidth:380,width:"90%",cursor:dinged?"default":"pointer",userSelect:"none",outline:"none"}}>
       {stars.map(s=><div key={s.id} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,fontSize:s.size,animation:`starPop 0.7s ${s.delay}s ease-out forwards`,opacity:0,pointerEvents:"none"}}>✡️</div>)}
       <div style={{fontSize:52,marginBottom:8}}>🎉</div>
       <h2 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:26,margin:"0 0 8px"}}>Learned!</h2>
       <p style={{color:C.midGray,marginBottom:32,fontSize:15,fontFamily:"Raleway,sans-serif"}}>Great work — you've mastered this one!</p>
-      {!dinged?<button onClick={handleDing} style={{background:C.green,color:"white",border:"none",borderRadius:50,padding:"18px 48px",fontSize:28,fontWeight:"800",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>🔔 Ding!</button>:<div style={{fontSize:36}}>✨ Amazing! ✨</div>}
-      <button onClick={onClose} style={{position:"absolute",top:12,right:16,background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.midGray}}>✕</button>
+      {!dinged?<button type="button" tabIndex={-1} style={{background:C.green,color:"white",border:"none",borderRadius:50,padding:"18px 48px",fontSize:28,fontWeight:"800",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>🔔 Ding!</button>:<div style={{fontSize:36}}>✨ Amazing! ✨</div>}
+      <button onClick={e=>{e.stopPropagation();onClose();}} aria-label="Close" style={{position:"absolute",top:12,right:16,background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.midGray}}>✕</button>
     </div>
     <style>{`@keyframes starPop{0%{opacity:0;transform:scale(0)}50%{opacity:1;transform:scale(1.4)}100%{opacity:0;transform:scale(0.8)}}`}</style>
   </div>;
@@ -3838,7 +3874,7 @@ export default function App() {
   const [learnerViewMode,setLearnerViewMode]=useState("simplified");
   const [showDing,setShowDing]=useState(false);
   useEffect(()=>{
-    prepareDingSound();
+    getDingAudioEl();
     function wake(){wakeSoundCtx();}
     window.addEventListener("pointerdown",wake,true);
     window.addEventListener("touchend",wake,true);
