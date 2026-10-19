@@ -463,12 +463,13 @@ async function sendMonthlyUpdateEmail({learner, subject, html}) {
 const DEFAULT_PART_LABELS = {
   1:"Part 1", 2:"Part 2",
   3:"Part 3", 4:"Additional Learning",
-  5:"Torah Service", 6:"Shacharit",
+  5:"Torah Service", 6:"Shacharit", 7:"Shabbat Maariv",
 };
 
 // ── Optional per-learner sections (off by default; toggled in More Settings) ──
 const TORAH_SERVICE_PART = 5;
 const SHACHARIT_PART = 6;
+const MAARIV_PART = 7;
 const TORAH_SERVICE_PRAYERS = [
   {name:"Ein Kamocha",page:168,legacy:"Torah Service – Ein Kamocha"},
   {name:"Av Harachamim - Ki Mitziyon",page:168,legacy:"Torah Service – Av Harachamim"},
@@ -492,12 +493,47 @@ const SHACHARIT_PRAYERS = [
   {name:"Oseh Shalom",page:166},
   {name:"Kaddish Shalem",page:167},
 ];
+const MAARIV_PRAYERS = [
+  {name:"Bar'chu",page:"39a"},
+  {name:"Uma'avir yom",page:"39a"},
+  {name:"Ahavat Olam",page:40},
+  {name:"Umalchuto b'ratzon",page:44},
+  {name:"Hashkiveinu",page:45},
+  {name:"Chatzi Kaddish",page:46},
+  {name:"Vaychulu",page:53},
+  {name:"Avot",page:53},
+  {name:"Magein Avot",page:53},
+  {name:"Eloheinu...Kad'sheinu",page:54},
+  {name:"Kaddish Shalem",page:54},
+];
+const OPTIONAL_SECTIONS = {
+  torah:{part:TORAH_SERVICE_PART,defs:TORAH_SERVICE_PRAYERS},
+  shacharit:{part:SHACHARIT_PART,defs:SHACHARIT_PRAYERS},
+  maariv:{part:MAARIV_PART,defs:MAARIV_PRAYERS},
+};
+// Cards that share one Default Media row across sections: "name|part" -> canonical part
+const SHARED_DEFAULT_MEDIA = {[`Kaddish Shalem|${MAARIV_PART}`]:SHACHARIT_PART};
+function dmCanonPart(name,part){const c=SHARED_DEFAULT_MEDIA[`${name}|${part}`];return c??part;}
+function dmKeyOf(name,part){return `${name}|${dmCanonPart(name,part)}`;}
+// Page numbers may carry a letter suffix ("39a"). Whole numbers stay numbers.
+function normalizePage(v){
+  const clean=String(v??"").trim();
+  if(clean==="")return null;
+  return /^\d+$/.test(clean)?Number(clean):clean;
+}
+function pageSortVal(pg){
+  if(pg===null||pg===undefined||pg==="")return 9999;
+  const n=parseFloat(String(pg));
+  if(!Number.isFinite(n))return 9999;
+  const suf=String(pg).replace(/^[\d.]+/,"").toLowerCase();
+  return n+(suf?(suf.charCodeAt(0)-96)/100:0);
+}
 // Default Media rows were keyed "name|part" before the Torah Service move — fall back to the old key.
 const DEFAULT_MEDIA_ALIASES = Object.fromEntries(
   TORAH_SERVICE_PRAYERS.filter(t=>t.legacy).map(t=>[`${t.name}|${TORAH_SERVICE_PART}`,`${t.legacy}|4`])
 );
 function lookupDefaultMedia(map,name,part){
-  const k=`${name}|${part}`;
+  const k=dmKeyOf(name,part);
   if(map[k])return map[k];
   const alias=DEFAULT_MEDIA_ALIASES[k];
   return alias?map[alias]:undefined;
@@ -507,6 +543,7 @@ function isInHiddenSection(p,learner){
   const rs=learner?.category==="rs_learner";
   if(p.part===TORAH_SERVICE_PART)return rs||!learner?.show_torah_service;
   if(p.part===SHACHARIT_PART)return rs||!learner?.show_shacharit;
+  if(p.part===MAARIV_PART)return rs||!learner?.show_maariv;
   return false;
 }
 function blankPrayerRow(learnerId,name,page,part,sortOrder){
@@ -516,12 +553,14 @@ function blankPrayerRow(learnerId,name,page,part,sortOrder){
 async function ensureOptionalSection(learnerId,section){
   const rows=(await DB.getPrayers(learnerId))||[];
   const isTorah=section==="torah";
-  const defs=isTorah?TORAH_SERVICE_PRAYERS:SHACHARIT_PRAYERS;
-  const part=isTorah?TORAH_SERVICE_PART:SHACHARIT_PART;
+  const {defs,part}=OPTIONAL_SECTIONS[section];
   const toInsert=[];
   for(let i=0;i<defs.length;i++){
     const d=defs[i];
-    const existing=rows.find(r=>r.name===d.name)||(d.legacy?rows.find(r=>r.name===d.legacy):null);
+    // Torah Service cards may be moved in from other parts; Shacharit/Maariv share names, so match within the part only.
+    const existing=isTorah
+      ?(rows.find(r=>r.name===d.name)||(d.legacy?rows.find(r=>r.name===d.legacy):null))
+      :rows.find(r=>r.name===d.name&&Number(r.part)===part);
     if(existing){
       if(existing.part!==part||existing.name!==d.name||existing.sort_order!==i){
         await DB.updatePrayer(existing.id,{name:d.name,part,sort_order:i,page:existing.page??d.page});
@@ -868,7 +907,7 @@ function InlinePageEdit({value,onSave,style={},placeholder="—"}) {
   useEffect(()=>{if(editing)ref.current?.focus();},[editing]);
   useEffect(()=>{setDraft(value===null||value===undefined?"":String(value));},[value]);
   function commit(){setEditing(false);const clean=String(draft||"").trim();if(clean!==String(value??""))onSave(clean);else setDraft(value===null||value===undefined?"":String(value));}
-  if(editing) return <input ref={ref} type="number" value={draft} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(value===null||value===undefined?"":String(value));setEditing(false);}}} style={{...style,border:`1.5px solid ${C.blue}`,borderRadius:6,padding:"2px 6px",outline:"none",fontFamily:"Raleway,sans-serif",background:"white",width:58}} placeholder={placeholder}/>;
+  if(editing) return <input ref={ref} type="text" maxLength={8} value={draft} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(value===null||value===undefined?"":String(value));setEditing(false);}}} style={{...style,border:`1.5px solid ${C.blue}`,borderRadius:6,padding:"2px 6px",outline:"none",fontFamily:"Raleway,sans-serif",background:"white",width:58}} placeholder={placeholder}/>;
   return <span onClick={()=>setEditing(true)} title="Click to edit page number" style={{...style,cursor:"text",borderBottom:`1.5px dashed ${C.blue}55`,paddingBottom:1}}>{display}</span>;
 }
 
@@ -1246,16 +1285,16 @@ function LessonReviewInline({prayer,onLinkUpdate}) {
 // ── Default Media Control Panel ────────────────────────────────────────────
 function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefaultMedia}) {
   const [open,setOpen]=useState(false);
-  function dmKey(name,part){return `${name}|${part}`;}
+  function dmKey(name,part){return dmKeyOf(name,part);}
   const unique=[];const seen=new Set();
   (prayers||[]).forEach(p=>{
     const key=dmKey(p.name,p.part);
     if(!seen.has(key)){seen.add(key);unique.push({name:p.name,part:p.part,page:p.page});}
   });
-  unique.sort((a,b)=>(a.part-b.part)||((a.page||9999)-(b.page||9999))||a.name.localeCompare(b.name));
+  unique.sort((a,b)=>(a.part-b.part)||(pageSortVal(a.page)-pageSortVal(b.page))||a.name.localeCompare(b.name));
   async function applyDefault(item,patch){
     const dm=defaultMediaMap[dmKey(item.name,item.part)]||{};
-    const row={id:dm.id||genId(),prayer_name:item.name,part:item.part,...dm,...patch};
+    const row={id:dm.id||genId(),prayer_name:item.name,...dm,...patch,part:dmCanonPart(item.name,item.part)};
     await DB.upsertDefaultMedia(row);
     onSetDefaultMedia(item.name,item.part,row);
   }
@@ -1407,7 +1446,7 @@ function soLongDate(iso,addDays=0){
 // Row text markup: *italic*, "\n" = line break. hl: "who"/"prayer" highlight colors.
 function buildServiceOrderModel(learner, prayers){
   const first=(learner.name||"Learner").trim().split(/\s+/)[0];
-  const qualified=(prayers||[]).filter(p=>!isInHiddenSection(p,learner)&&SO_QUALIFYING_STATUSES.includes(p.status)).map(p=>soNorm(p.name));
+  const qualified=(prayers||[]).filter(p=>!isInHiddenSection(p,learner)&&Number(p.part)!==MAARIV_PART&&SO_QUALIFYING_STATUSES.includes(p.status)).map(p=>soNorm(p.name));
   const has=key=>qualified.some(n=>SO_MATCH[key](n));
   const sat=learner.date_of_service;
   const Y="yellow", CY="cyan", GR="green";
@@ -1614,7 +1653,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
   const [showMonthlyUpdates,setShowMonthlyUpdates]=useState(false);
   const [showInstructors,setShowInstructors]=useState(false);
   const isAdmin = instructorUser?.role==="admin";
-  function dmKey(name,part){return `${name}|${part}`;}
+  function dmKey(name,part){return dmKeyOf(name,part);}
   async function load(){
     if(!learnerId){setLoading(false);return;}
     setLoading(true);setError(null);
@@ -2177,8 +2216,8 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const [currentLearner,setCurrentLearner]=useState(null);
   const [showMoreLearning,setShowMoreLearning]=useState(false);
 
-  function dmKey(name,part){return `${name}|${part}`;}
-  function defaultSort(a,b){return ((a.sort_order??0)-(b.sort_order??0))||((a.page||9999)-(b.page||9999))||a.name.localeCompare(b.name);}
+  function dmKey(name,part){return dmKeyOf(name,part);}
+  function defaultSort(a,b){return ((a.sort_order??0)-(b.sort_order??0))||(pageSortVal(a.page)-pageSortVal(b.page))||a.name.localeCompare(b.name);}
 
   async function load() {
     setLoading(true);setError(null);
@@ -2303,10 +2342,9 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   }
 
   async function handlePageSave(id,pageValue) {
-    const clean=String(pageValue||"").trim();
-    const page=clean===""?null:Number(clean);
-    const safePage=Number.isFinite(page)?page:null;
-    await DB.updatePrayer(id,{page:safePage});
+    const safePage=normalizePage(pageValue);
+    try{await DB.updatePrayer(id,{page:safePage});}
+    catch(e){console.error(e);alert(typeof safePage==="string"?"Could not save a page number with letters. In Supabase, change prayers.page to type text.":"Could not save the page number.");return;}
     setPrayers(prev=>{const np=prev.map(p=>p.id===id?{...p,page:safePage}:p);np._att=prev._att;return np;});
   }
 
@@ -2406,13 +2444,13 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
 
 function AddPrayerModal({partCount,onAdd,onClose}) {
   const [name,setName]=useState("");const [page,setPage]=useState("");const [part,setPart]=useState(partCount||1);
-  function handle(){if(!name.trim())return;onAdd({name:name.trim(),page:page?+page:null,part:+part});onClose();}
+  function handle(){if(!name.trim())return;onAdd({name:name.trim(),page:normalizePage(page),part:+part});onClose();}
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
     <div style={{background:C.cream,borderRadius:20,padding:"32px 36px",width:"90%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
       <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 20px"}}>Add Prayer / Reading</h3>
       <div style={{marginBottom:14}}><label style={LS}>Title</label><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={IS} autoFocus/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-        <div><label style={LS}>Page</label><input type="number" value={page} onChange={e=>setPage(e.target.value)} style={IS} placeholder="optional"/></div>
+        <div><label style={LS}>Page</label><input type="text" value={page} onChange={e=>setPage(e.target.value)} style={IS} placeholder="optional"/></div>
         <div><label style={LS}>Section</label><select value={part} onChange={e=>setPart(e.target.value)} style={IS}>{Array.from({length:partCount},(_,i)=><option key={i+1} value={i+1}>Section {i+1}</option>)}</select></div>
       </div>
       <p style={{fontSize:12,color:C.midGray,margin:"-8px 0 18px",fontFamily:"Raleway,sans-serif"}}>New cards are added to the bottom of the tracker.</p>
@@ -2814,7 +2852,7 @@ function SmartReview({learnerId}) {
   const [todayCount,setTodayCount]=useState(0);const [overrideCap,setOverrideCap]=useState(false);
   const [serviceDate,setServiceDate]=useState(null);
 
-  function dmKey(name,part){return `${name}|${part}`;}
+  function dmKey(name,part){return dmKeyOf(name,part);}
 
   async function load(){
     setLoading(true);
@@ -3268,7 +3306,7 @@ function LearnerServiceInfoEditor({l,formatServiceDate,onSave}) {
   </>;
 }
 
-// ── Optional section toggles (Torah Service, Shacharit) ──────────────────
+// ── Optional section toggles (Torah Service, Shacharit, Shabbat Maariv) ──────────────────
 function OptionalSectionToggles({l,onSave}) {
   const [busy,setBusy]=useState(null);
   async function toggle(field,section,on){
@@ -3280,7 +3318,7 @@ function OptionalSectionToggles({l,onSave}) {
       onSave(patch);
     }catch(e){
       console.error(e);
-      alert(`Could not update this section. Make sure the ${field} column exists on the learners table in Supabase.`);
+      alert(`Could not update this section. Make sure the ${field} column exists on the learners table in Supabase${field==="show_maariv"?", and that prayers.page is type text (Maariv uses page 39a)":""}.`);
     }
     setBusy(null);
   }
@@ -3293,6 +3331,7 @@ function OptionalSectionToggles({l,onSave}) {
     <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
       {box("show_torah_service","torah","Show Torah Service",TORAH_SERVICE_PRAYERS.length)}
       {box("show_shacharit","shacharit","Show Shacharit",SHACHARIT_PRAYERS.length)}
+      {box("show_maariv","maariv","Show Shabbat Maariv",MAARIV_PRAYERS.length)}
     </div>
   </div>;
 }
@@ -4214,7 +4253,7 @@ export default function App() {
 
       {(selectedLearner||(role==="parent"&&learnerId))&&<>
         {activeTab==="home"&&role==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
-        {activeTab==="prayers"    &&<PrayerTracker  sectionsKey={`${activeLearner?.show_torah_service?1:0}${activeLearner?.show_shacharit?1:0}${activeLearner?.category||""}`} learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  sectionsKey={`${activeLearner?.show_torah_service?1:0}${activeLearner?.show_shacharit?1:0}${activeLearner?.show_maariv?1:0}${activeLearner?.category||""}`} learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
         {activeTab==="assignments"&&!isRSActive&&<Assignments    learnerId={selectedLearner||learnerId} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
         {activeTab==="services"   &&!isRSActive&&<ServiceAttendance learnerId={selectedLearner||learnerId} role={role} isLead={isLead}/>}
       </>}
