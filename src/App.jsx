@@ -1142,7 +1142,10 @@ function PdfCanvasDocument({ url, title }) {
         target.replaceChildren();
 
         const availableWidth = Math.max(260, Math.min(820, target.clientWidth ? target.clientWidth - 24 : 760));
-        const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+        // Oversample: 2x on regular screens, 3x on Retina; capped by canvas size so phones stay responsive.
+        const deviceRatio = Math.max(1, window.devicePixelRatio || 1);
+        const targetRatio = deviceRatio >= 2 ? 3 : 2;
+        const MAX_CANVAS_PIXELS = 16000000;
 
         for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
           if (cancelled) return;
@@ -1175,6 +1178,9 @@ function PdfCanvasDocument({ url, title }) {
           canvas.style.display = "block";
           canvas.style.width = `${viewport.width}px`;
           canvas.style.height = `${viewport.height}px`;
+          let pixelRatio = targetRatio;
+          const area = viewport.width * viewport.height;
+          if (area * pixelRatio * pixelRatio > MAX_CANVAS_PIXELS) pixelRatio = Math.max(deviceRatio, Math.sqrt(MAX_CANVAS_PIXELS / area));
           canvas.width = Math.floor(viewport.width * pixelRatio);
           canvas.height = Math.floor(viewport.height * pixelRatio);
 
@@ -1211,11 +1217,46 @@ function PdfCanvasDocument({ url, title }) {
   </div>;
 }
 
+// ── Viewer keyboard: Space = play/pause audio, optional arrow-key paging ───
+function isTypingTarget(el){
+  if(!el)return false;
+  if(el.isContentEditable)return true;
+  const tag=(el.tagName||"").toUpperCase();
+  if(tag==="TEXTAREA"||tag==="SELECT")return true;
+  if(tag==="INPUT"){const t=(el.type||"text").toLowerCase();return !["range","checkbox","radio","button","submit","reset","file","color"].includes(t);}
+  return false;
+}
+function useViewerKeys({audioCtl,onPrev,onNext}){
+  const cb=useRef({});cb.current={audioCtl,onPrev,onNext};
+  useEffect(()=>{
+    function isSpace(e){return e.code==="Space"||e.key===" "||e.key==="Spacebar";}
+    function down(e){
+      if(isTypingTarget(e.target))return;
+      if(isSpace(e)){
+        e.preventDefault();e.stopPropagation();
+        const ae=document.activeElement;if(ae&&ae.tagName==="BUTTON")ae.blur();
+        if(!e.repeat)cb.current.audioCtl?.current?.toggle?.();
+        return;
+      }
+      const isRange=(e.target&&e.target.tagName==="INPUT"&&e.target.type==="range");
+      if(isRange)return;
+      if(e.key==="ArrowLeft"&&cb.current.onPrev){e.preventDefault();cb.current.onPrev();}
+      else if(e.key==="ArrowRight"&&cb.current.onNext){e.preventDefault();cb.current.onNext();}
+    }
+    function up(e){if(!isTypingTarget(e.target)&&(e.code==="Space"||e.key===" ")){e.preventDefault();e.stopPropagation();}}
+    window.addEventListener("keydown",down,true);
+    window.addEventListener("keyup",up,true);
+    return ()=>{window.removeEventListener("keydown",down,true);window.removeEventListener("keyup",up,true);};
+  },[]);
+}
+
 // ── Multi-Page Viewer ─────────────────────────────────────────────────────
 function MultiPageViewer({pages,title,onClose}) {
   const [pageIdx,setPageIdx]=useState(0);
   const page=pages[pageIdx]||{};
   const total=pages.length;
+  const audioCtl=useRef(null);
+  useViewerKeys({audioCtl,onPrev:()=>setPageIdx(i=>Math.max(0,i-1)),onNext:()=>setPageIdx(i=>Math.min(total-1,i+1))});
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.85)",zIndex:3000,display:"flex",flexDirection:"column"}}>
     <div style={{background:C.navy,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:"white",fontSize:15,flex:1}}>{title}</span>
@@ -1223,7 +1264,7 @@ function MultiPageViewer({pages,title,onClose}) {
       <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
     </div>
     {page.audio_url&&<div style={{background:"#0a2a4a",padding:"8px 16px",flexShrink:0}}>
-      <AudioPlayer url={page.audio_url} name={page.audio_name||`${title} — ${pageLabel(page,pageIdx)}`}/>
+      <AudioPlayer key={`a-${pageIdx}`} controlRef={audioCtl} url={page.audio_url} name={page.audio_name||`${title} — ${pageLabel(page,pageIdx)}`}/>
     </div>}
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",background:"white"}}>
       {page.pdf_url
@@ -1244,6 +1285,8 @@ function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
   const hasAudio=!!audioUrl;
   const displayTitle=title||name||"PDF";
   const downloadLabel=(name||title||"document").replace(/\.pdf$/i,"") + ".pdf";
+  const audioCtl=useRef(null);
+  useViewerKeys({audioCtl});
 
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.88)",zIndex:2000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
     <div style={{width:"100%",maxWidth:860,background:"white",borderRadius:16,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",height:"85vh"}}>
@@ -1255,7 +1298,7 @@ function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
         <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer",flexShrink:0}}>✕</button>
       </div>
       {hasAudio&&<div style={{padding:"10px 16px",background:"#f8f9fa",borderBottom:"1px solid #e9ecef",flexShrink:0}}>
-        <AudioPlayer url={audioUrl} name={audioName}/>
+        <AudioPlayer controlRef={audioCtl} url={audioUrl} name={audioName}/>
       </div>}
       <PdfCanvasDocument url={url} title={displayTitle}/>
     </div>
@@ -1280,7 +1323,7 @@ function AudioOnlyModal({url,name,onClose}) {
 }
 
 // ── Audio Player ───────────────────────────────────────────────────────────
-function AudioPlayer({url,name}) {
+function AudioPlayer({url,name,controlRef=null}) {
   const [playing,setPlaying]=useState(false);const [progress,setProgress]=useState(0);const [duration,setDuration]=useState(0);const [error,setError]=useState("");const ref=useRef(null);
   const directUrl=driveToDirectUrl(url);const viewUrl=driveToViewUrl(url);
   useEffect(()=>{setPlaying(false);setProgress(0);setDuration(0);setError("");const a=ref.current;if(a){a.pause();a.load();}},[directUrl]);
@@ -1296,6 +1339,17 @@ function AudioPlayer({url,name}) {
       setError("Audio could not start. Try opening the audio in a new tab, or upload the file again.");
     }
   }
+  // Lets a viewer (Space key) play/pause this player; based on the element's real state.
+  useEffect(()=>{
+    if(!controlRef)return;
+    controlRef.current={toggle:()=>{
+      const a=ref.current;if(!a||!directUrl)return;
+      if(!a.paused){a.pause();setPlaying(false);return;}
+      setError("");
+      a.play().then(()=>setPlaying(true)).catch(()=>{setPlaying(false);setError("Audio could not start. Try opening the audio in a new tab, or upload the file again.");});
+    }};
+    return ()=>{controlRef.current=null;};
+  });
   function fmt(s){if(!s||isNaN(s)||!isFinite(s))return"0:00";return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;}
   return <div style={{background:C.lightBlue,borderRadius:10,padding:"8px 12px"}}>
     <div style={{display:"flex",alignItems:"center",gap:10}}>
