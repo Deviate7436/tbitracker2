@@ -209,7 +209,7 @@ const DB = {
   deleteLearner: (id) => sb(`learners?id=eq.${id}`, "DELETE"),
 
   // Prayers
-  getPrayers: (lid) => sb(`prayers?learner_id=eq.${lid}&select=*&order=sort_order`),
+  getPrayers: async (lid) => migrateBahForLearner(lid, await sb(`prayers?learner_id=eq.${lid}&select=*&order=sort_order`)),
   getPrayer: async(id) => {const r=await sb(`prayers?id=eq.${id}&select=*`);return Array.isArray(r)?r[0]:null;},
   upsertPrayer: (p) => sb("prayers?on_conflict=id", "POST", p, {"Prefer":"resolution=merge-duplicates,return=representation"}),
   updatePrayer: (id, patch) => sb(`prayers?id=eq.${id}`, "PATCH", patch, {"Prefer":"return=representation"}),
@@ -506,6 +506,121 @@ const MAARIV_PRAYERS = [
   {name:"Eloheinu...Kad'sheinu",page:54},
   {name:"Kaddish Shalem",page:54},
 ];
+// ── Blessings After Haftarah: six old cards merged into one multi-page card ──
+// Old cards are never deleted; they are hidden everywhere by name (isRetiredPrayer).
+const BAH_NAME = "Blessings After Haftarah";
+const BAH_OLD_NAMES = [1,2,3,4,5,6].map(n=>`Blessing After Haftarah – part ${n}`);
+const BAH_LABELS = [1,2,3,4,5,6].map(n=>`Part ${n}`);
+function isRetiredPrayer(p){return !!p&&BAH_OLD_NAMES.includes(p.name);}
+function bahCardId(lid){return `bah-${lid}`;}
+function pageLabel(pg,i){return (pg&&pg.label)||`Page ${i+1}`;}
+function maxISO(arr){const v=arr.filter(Boolean).sort();return v.length?v[v.length-1]:null;}
+function minISO(arr){const v=arr.filter(Boolean).sort();return v.length?v[0]:null;}
+const BAH_INFLIGHT = {};
+let BAH_DM_INFLIGHT = null;
+async function migrateBahDefaultMedia(){
+  if(!BAH_DM_INFLIGHT){
+    BAH_DM_INFLIGHT=(async()=>{
+      const rows=(await sb("default_prayer_media?select=*"))||[];
+      if(rows.some(r=>r.prayer_name===BAH_NAME))return;
+      const olds=BAH_OLD_NAMES.map(n=>rows.find(r=>r.prayer_name===n)||null);
+      if(!olds.some(Boolean))return;
+      const part=Number((olds.find(Boolean)||{}).part)||1;
+      const pages=BAH_LABELS.map((label,i)=>{
+        const r=olds[i]||{};
+        return {id:genId(),label,
+          pdf_url:r.pdf||null,pdf_name:r.pdf_name||null,
+          audio_url:r.audio_lower_url||r.default_audio_lower_url||r.audio||null,
+          audio_name:r.audio_lower_name||r.default_audio_lower_name||r.audio_name||null,
+          audio_higher_url:r.audio_higher_url||r.default_audio_higher_url||null,
+          audio_higher_name:r.audio_higher_name||r.default_audio_higher_name||null};
+      });
+      await sb("default_prayer_media?on_conflict=prayer_name,part","POST",{id:genId(),prayer_name:BAH_NAME,part,pages},{"Prefer":"resolution=merge-duplicates,return=representation"});
+    })().catch(e=>{console.error("Default Media merge (Blessings After Haftarah) failed:",e);BAH_DM_INFLIGHT=null;});
+  }
+  return BAH_DM_INFLIGHT;
+}
+async function migrateBahForLearner(lid,rows){
+  if(!Array.isArray(rows)||!lid)return rows;
+  const olds=rows.filter(isRetiredPrayer);
+  if(!olds.length)return rows;
+  const newId=bahCardId(lid);
+  if(rows.some(r=>r.id===newId||r.name===BAH_NAME))return rows;
+  if(!BAH_INFLIGHT[lid]){
+    BAH_INFLIGHT[lid]=(async()=>{
+      const byPart=BAH_OLD_NAMES.map(n=>olds.find(o=>o.name===n)||null);
+      const first=byPart.find(Boolean)||olds[0];
+      const statuses=byPart.map(o=>(o&&o.status)||"Not Started");
+      const status=statuses.every(x=>x==="Learned")?"Learned":statuses.every(x=>x==="Not Started")?"Not Started":"In Progress";
+      const pages=BAH_LABELS.map((label,i)=>{
+        const o=byPart[i]||{};
+        const pg={id:genId(),label,status:o.status||"Not Started",
+          pdf_url:o.pdf||null,pdf_name:o.pdf_name||null,
+          audio_url:o.audio||null,audio_name:o.audio_name||null,
+          last_reviewed:o.last_reviewed||null,completion_date:o.completion_date||null};
+        ["sr_ease","sr_reps","sr_interval","sr_due"].forEach(k=>{if(o[k]!==undefined&&o[k]!==null)pg[k]=o[k];});
+        return pg;
+      });
+      const tag=(o,i)=>`Part ${i+1}`;
+      const notes=byPart.map((o,i)=>o&&o.notes&&String(o.notes).trim()?`${tag(o,i)}: ${String(o.notes).trim()}`:null).filter(Boolean).join("\n");
+      const notes_chat=byPart.flatMap((o,i)=>(o&&Array.isArray(o.notes_chat)?o.notes_chat:[]).map(m=>({...m,text:`[${tag(o,i)}] ${m.text||""}`}))).sort((a,b)=>String(a.ts||"").localeCompare(String(b.ts||"")));
+      const subtasks=byPart.flatMap(o=>(o&&Array.isArray(o.subtasks))?o.subtasks:[]);
+      const instructor_reviews=byPart.flatMap(o=>(o&&Array.isArray(o.instructor_reviews))?o.instructor_reviews:[]);
+      const {created_at,updated_at,...base}=first;
+      const merged={...base,id:newId,name:BAH_NAME,page:first.page??175,part:first.part??1,status,
+        completion_date:status==="Learned"?maxISO(byPart.map(o=>o&&o.completion_date)):null,
+        last_reviewed:maxISO(byPart.map(o=>o&&o.last_reviewed)),
+        target_date:minISO(byPart.map(o=>o&&o.target_date)),
+        notes,notes_chat,subtasks,instructor_reviews,pages,
+        pdf:null,pdf_name:null,audio:null,audio_name:null,
+        hidden_from_learner:olds.every(o=>!!o.hidden_from_learner)};
+      const res=await sb("prayers?on_conflict=id","POST",merged,{"Prefer":"resolution=merge-duplicates,return=representation"});
+      // Re-link assignments that pointed at any of the old cards
+      try{
+        const oldIds=new Set(olds.map(o=>o.id));
+        const as=(await sb(`assignments?learner_id=eq.${lid}&select=*`))||[];
+        for(const a of as){
+          const ids=a.linked_prayer_ids||[];
+          if(!ids.some(x=>oldIds.has(x)))continue;
+          const next=[...new Set(ids.map(x=>oldIds.has(x)?newId:x))];
+          await sb(`assignments?id=eq.${a.id}`,"PATCH",{linked_prayer_ids:next},{"Prefer":"return=representation"});
+        }
+      }catch(e){console.error("Assignment re-link (Blessings After Haftarah) failed:",e);}
+      await migrateBahDefaultMedia();
+      return (Array.isArray(res)&&res[0])?res[0]:merged;
+    })();
+  }
+  try{
+    const merged=await BAH_INFLIGHT[lid];
+    return merged?[...rows,merged]:rows;
+  }catch(e){
+    console.error("Blessings After Haftarah merge failed:",e);
+    delete BAH_INFLIGHT[lid];
+    return rows;
+  }
+}
+// Page audio for a voice track; higher falls back to lower and vice versa.
+function pickPageAudio(pg,voice){
+  const p=pg||{};
+  const lo={url:p.audio_url||null,name:p.audio_name||null};
+  const hi={url:p.audio_higher_url||null,name:p.audio_higher_name||null};
+  return normalizeVoiceTrack(voice)==="higher"?(hi.url?hi:lo):(lo.url?lo:hi);
+}
+// Learner pages, each filled in from the matching Default Media page when empty.
+function resolvePages(own,dmPages,voice){
+  const o=Array.isArray(own)?own:[];
+  const d=Array.isArray(dmPages)?dmPages:[];
+  const base=o.length?o:d;
+  return base.map((pg,i)=>{
+    const def=o.length?(d[i]||{}):{};
+    const ownA=pickPageAudio(pg,voice);
+    const a=ownA.url?ownA:pickPageAudio(def,voice);
+    return {...pg,
+      pdf_url:pg.pdf_url||def.pdf_url||null,
+      pdf_name:pg.pdf_url?(pg.pdf_name||null):(def.pdf_name||pg.pdf_name||null),
+      audio_url:a.url||null,audio_name:a.name||null};
+  });
+}
 const OPTIONAL_SECTIONS = {
   torah:{part:TORAH_SERVICE_PART,defs:TORAH_SERVICE_PRAYERS},
   shacharit:{part:SHACHARIT_PART,defs:SHACHARIT_PRAYERS},
@@ -540,6 +655,7 @@ function lookupDefaultMedia(map,name,part){
 }
 // Is this prayer in an optional section the learner has not turned on (or cannot have)?
 function isInHiddenSection(p,learner){
+  if(isRetiredPrayer(p))return true;
   const rs=learner?.category==="rs_learner";
   if(p.part===TORAH_SERVICE_PART)return rs||!learner?.show_torah_service;
   if(p.part===SHACHARIT_PART)return rs||!learner?.show_shacharit;
@@ -590,12 +706,7 @@ const DEFAULT_PRAYERS = [
   {name:"Torah Blessing – Before",page:172,part:1},
   {name:"Torah Blessing – After",page:172,part:1},
   {name:"Blessing Before Haftarah",page:175,part:1},
-  {name:"Blessing After Haftarah – part 1",page:175,part:1},
-  {name:"Blessing After Haftarah – part 2",page:null,part:1},
-  {name:"Blessing After Haftarah – part 3",page:null,part:1},
-  {name:"Blessing After Haftarah – part 4",page:null,part:1},
-  {name:"Blessing After Haftarah – part 5",page:null,part:1},
-  {name:"Blessing After Haftarah – part 6",page:null,part:1},
+  {name:BAH_NAME,page:175,part:1,pageLabels:BAH_LABELS},
   {name:"Haftarah Trope",page:null,part:1},
   {name:"Haftarah Reading",page:null,part:2},
   {name:"Tallit Blessing",page:102,part:2},
@@ -1108,15 +1219,15 @@ function MultiPageViewer({pages,title,onClose}) {
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.85)",zIndex:3000,display:"flex",flexDirection:"column"}}>
     <div style={{background:C.navy,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:"white",fontSize:15,flex:1}}>{title}</span>
-      <span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:"rgba(255,255,255,0.7)"}}>Page {pageIdx+1} of {total}</span>
+      <span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:"rgba(255,255,255,0.7)"}}>{pageLabel(page,pageIdx)===`Page ${pageIdx+1}`?`Page ${pageIdx+1} of ${total}`:`${pageLabel(page,pageIdx)} · ${pageIdx+1} of ${total}`}</span>
       <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
     </div>
     {page.audio_url&&<div style={{background:"#0a2a4a",padding:"8px 16px",flexShrink:0}}>
-      <AudioPlayer url={page.audio_url} name={page.audio_name||`${title} — Page ${pageIdx+1}`}/>
+      <AudioPlayer url={page.audio_url} name={page.audio_name||`${title} — ${pageLabel(page,pageIdx)}`}/>
     </div>}
     <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",background:"white"}}>
       {page.pdf_url
-        ?<PdfCanvasDocument key={`${pageIdx}-${page.pdf_url}`} url={page.pdf_url} title={`${title} — Page ${pageIdx+1}`}/>
+        ?<PdfCanvasDocument key={`${pageIdx}-${page.pdf_url}`} url={page.pdf_url} title={`${title} — ${pageLabel(page,pageIdx)}`}/>
         :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"rgba(255,255,255,0.5)",fontFamily:"Raleway,sans-serif"}}>No PDF for this page</div>}
     </div>
     <div style={{background:C.navy,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
@@ -1287,7 +1398,7 @@ function DefaultMediaControlPanel({prayers,partLabels,defaultMediaMap,onSetDefau
   const [open,setOpen]=useState(false);
   function dmKey(name,part){return dmKeyOf(name,part);}
   const unique=[];const seen=new Set();
-  (prayers||[]).forEach(p=>{
+  (prayers||[]).filter(p=>!isRetiredPrayer(p)).forEach(p=>{
     const key=dmKey(p.name,p.part);
     if(!seen.has(key)){seen.add(key);unique.push({name:p.name,part:p.part,page:p.page});}
   });
@@ -1385,7 +1496,7 @@ const SO_MATCH = {
   tallit: n => n.includes("tallitblessing"),
   torahBlessings: n => n.startsWith("torahblessing"),
   maftir: n => n.includes("maftir"),
-  haftarah: n => n.includes("haftarahreading") || n.includes("blessingbeforehaftarah") || n.includes("blessingafterhaftarah"),
+  haftarah: n => n.includes("haftarahreading") || n.includes("blessingbeforehaftarah") || n.includes("blessingafterhaftarah") || n.includes("blessingsafterhaftarah"),
   einKamocha: n => n.includes("einkamocha"),
   avHarachamim: n => n.includes("avharachamim"),
   beiAna: n => n.includes("beiana"),
@@ -1937,7 +2048,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const selectedDefaultAudio=getDefaultAudioForVoice(defaultMedia,voiceTrack);
   const effectiveAudio=prayer.audio||selectedDefaultAudio.url||null;
   const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
-  const effectivePages=(prayer.pages&&prayer.pages.length)?prayer.pages:((defaultMedia&&Array.isArray(defaultMedia.pages))?defaultMedia.pages:[]);
+  const effectivePages=resolvePages(prayer.pages,defaultMedia&&defaultMedia.pages,voiceTrack);
   const hasMultiPage=effectivePages.length>1;
   const hasPdf=!!effectivePdf||hasMultiPage;const hasAudio=!!effectiveAudio;
 
@@ -2085,7 +2196,7 @@ function PageStatusPanel({prayer,onLinkUpdate}) {
     <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13,marginBottom:10}}>Per-Page Status</div>
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {pages.map((pg,i)=><div key={pg.id} style={{display:"flex",alignItems:"center",gap:10,background:"white",borderRadius:8,padding:"8px 12px",border:"1px solid #e9ecef"}}>
-        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13,minWidth:60}}>Page {i+1}</span>
+        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13,minWidth:60}}>{pageLabel(pg,i)}</span>
         <select value={pg.status||"Not Started"} onChange={e=>setPageStatus(pg.id,e.target.value)} style={{padding:"4px 10px",borderRadius:8,border:`1px solid ${STATUS_COLORS[pg.status||"Not Started"]}`,background:`${STATUS_COLORS[pg.status||"Not Started"]}18`,color:STATUS_COLORS[pg.status||"Not Started"],fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
           {STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
         </select>
@@ -2134,7 +2245,7 @@ function PagesEditor({pages,onSave,onSinglePage}) {
         setProgress(`Uploading page ${i+1} of ${parts.length}…`);
         const url=await uploadPdfToStorage(parts[i]);
         const prev=list[i]||{};
-        next.push({id:prev.id||genId(),label:`Page ${i+1}`,pdf_url:url,pdf_name:parts[i].name,audio_url:prev.audio_url||null,audio_name:prev.audio_name||null,...(prev.status?{status:prev.status}:{})});
+        next.push({...prev,id:prev.id||genId(),label:prev.label||`Page ${i+1}`,pdf_url:url,pdf_name:parts[i].name,audio_url:prev.audio_url||null,audio_name:prev.audio_name||null});
       }
       await save(next);
     }catch(e){
@@ -2158,12 +2269,13 @@ function PagesEditor({pages,onSave,onSinglePage}) {
     </div>
     {list.map((pg,i)=><div key={pg.id} style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13}}>Page {i+1}</span>
+        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13}}>{pageLabel(pg,i)}</span>
         <button onClick={()=>removePage(pg.id)} style={{marginLeft:"auto",background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Remove</button>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:16}}>
-        <div><div style={LS}>PDF</div><PdfUploadControl label={`Page ${i+1} PDF`} value={pg.pdf_url} name={pg.pdf_name} onUploaded={(url,label)=>updatePage(pg.id,{pdf_url:url,pdf_name:label})} onRemove={()=>updatePage(pg.id,{pdf_url:null,pdf_name:null})}/></div>
-        <div><div style={LS}>Audio</div><AudioUploadControl label={`Page ${i+1} Audio`} value={pg.audio_url} name={pg.audio_name} onUploaded={(url,label)=>updatePage(pg.id,{audio_url:url,audio_name:label})} onRemove={()=>updatePage(pg.id,{audio_url:null,audio_name:null})}/></div>
+        <div><div style={LS}>PDF</div><PdfUploadControl label={`${pageLabel(pg,i)} PDF`} value={pg.pdf_url} name={pg.pdf_name} onUploaded={(url,label)=>updatePage(pg.id,{pdf_url:url,pdf_name:label})} onRemove={()=>updatePage(pg.id,{pdf_url:null,pdf_name:null})}/></div>
+        <div><div style={LS}>Audio (lower voice)</div><AudioUploadControl label={`${pageLabel(pg,i)} Audio`} value={pg.audio_url} name={pg.audio_name} onUploaded={(url,label)=>updatePage(pg.id,{audio_url:url,audio_name:label})} onRemove={()=>updatePage(pg.id,{audio_url:null,audio_name:null})}/></div>
+        <div><div style={LS}>Audio (higher voice)</div><AudioUploadControl label={`${pageLabel(pg,i)} Higher Audio`} value={pg.audio_higher_url} name={pg.audio_higher_name} onUploaded={(url,label)=>updatePage(pg.id,{audio_higher_url:url,audio_higher_name:label})} onRemove={()=>updatePage(pg.id,{audio_higher_url:null,audio_higher_name:null})}/></div>
       </div>
     </div>)}
   </div>;
@@ -2205,7 +2317,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const [dragOverId,setDragOverId]=useState(null);
   const canReorder=role==="instructor"&&instructorUser?.role==="admin";
   const [collapsedParts,setCollapsedParts]=useState(()=>{
-    if(role==="learner") return {1:true,2:true,3:true,4:true,5:true,6:true};
+    if(role==="learner") return {1:true,2:true,3:true,4:true,5:true,6:true,7:true};
     try{return JSON.parse(localStorage.getItem(`tbi_collapsed_${learnerId}`)||"{}");}catch{return {};}
   });
   useEffect(()=>{
@@ -2232,7 +2344,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
       setDefaultMediaMap(dmMap);
       let prayers_data=pRows||[];
       if(prayers_data.length===0){
-        const seeded=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:learnerId,name:p.name,page:p.page||null,part:p.part,status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
+        const seeded=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:learnerId,name:p.name,page:p.page||null,part:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
         await DB.insertPrayers(seeded);
         prayers_data=seeded;
       }
@@ -2683,17 +2795,45 @@ function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRe
     </div>
   </div>;
 }
-// ── Linked Prayers Selector ────────────────────────────────────────────────
+// ── Linked Prayers Selector (grouped by part, searchable, status dots) ──────
+function linkSearchNorm(t){return String(t||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
 function LinkedPrayersSelector({learnerId,selected,onChange}) {
   const [prayers,setPrayers]=useState([]);
-  useEffect(()=>{if(learnerId)Promise.all([DB.getPrayers(learnerId),DB.getLearner(learnerId)]).then(([r,lr])=>setPrayers((r||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,lr))));},[learnerId]);
+  const [labels,setLabels]=useState({...DEFAULT_PART_LABELS});
+  const [q,setQ]=useState("");
+  useEffect(()=>{
+    if(!learnerId)return;
+    Promise.all([DB.getPrayers(learnerId),DB.getLearner(learnerId),DB.getPartLabels(learnerId).catch(()=>[])]).then(([r,lr,lRows])=>{
+      const lab={...DEFAULT_PART_LABELS};(lRows||[]).forEach(x=>{lab[x.part_number]=x.label;});setLabels(lab);
+      setPrayers((r||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,lr)).slice().sort((a,b)=>(Number(a.part)-Number(b.part))||((a.sort_order??0)-(b.sort_order??0))||(pageSortVal(a.page)-pageSortVal(b.page))||String(a.name).localeCompare(String(b.name))));
+    }).catch(e=>console.error(e));
+  },[learnerId]);
   if(!prayers.length) return null;
   function toggle(id){onChange(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);}
+  const nq=linkSearchNorm(q);
+  const shown=nq?prayers.filter(p=>linkSearchNorm(p.name).includes(nq)):prayers;
+  const parts=[...new Set(shown.map(p=>Number(p.part)))];
   return <div style={{marginBottom:10}}>
-    <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"700",color:C.navy,marginBottom:6}}>Link to prayers (optional)</div>
-    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-      {prayers.map(p=><button key={p.id} onClick={()=>toggle(p.id)} style={{padding:"3px 10px",borderRadius:20,border:`1.5px solid ${selected.includes(p.id)?C.blue:"#dee2e6"}`,background:selected.includes(p.id)?C.lightBlue:"white",color:selected.includes(p.id)?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontSize:11,fontWeight:"700",cursor:"pointer"}}>{p.name}</button>)}
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+      <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,fontWeight:"700",color:C.navy}}>Link to prayers (optional){selected.length?<span style={{color:C.blue,marginLeft:6}}>· {selected.length} selected</span>:null}</div>
+      <div style={{position:"relative",flex:"1 1 180px",maxWidth:260}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search prayers…" style={{...IS,padding:"5px 26px 5px 10px",fontSize:12}}/>
+        {q&&<button onClick={()=>setQ("")} aria-label="Clear search" style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13,lineHeight:1}}>✕</button>}
+      </div>
     </div>
+    {parts.length===0&&<div style={{fontSize:12,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No prayers match “{q}”.</div>}
+    {parts.map(part=><div key={part} style={{marginBottom:8}}>
+      <div style={{fontFamily:"Raleway,sans-serif",fontSize:11,fontWeight:"800",color:C.midGray,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>{labels[part]||`Part ${part}`}</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {shown.filter(p=>Number(p.part)===part).map(p=>{
+          const on=selected.includes(p.id);
+          const dot=STATUS_COLORS[p.status]||STATUS_COLORS["Not Started"];
+          return <button key={p.id} onClick={()=>toggle(p.id)} title={p.status||"Not Started"} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:20,border:`1.5px solid ${on?C.blue:"#dee2e6"}`,background:on?C.lightBlue:"white",color:on?C.blue:C.midGray,fontFamily:"Raleway,sans-serif",fontSize:11,fontWeight:"700",cursor:"pointer"}}>
+            <span aria-hidden="true" style={{width:8,height:8,borderRadius:"50%",background:dot,flexShrink:0}}/>{p.name}
+          </button>;
+        })}
+      </div>
+    </div>)}
   </div>;
 }
 
@@ -2704,6 +2844,26 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   const [newSubInput,setNewSubInput]=useState("");const [newSubtasks,setNewSubtasks]=useState([]);
   const [newLinkedPrayers,setNewLinkedPrayers]=useState([]);
   const [emailStatus,setEmailStatus]=useState({});
+  // Unsaved new-assignment draft: kept per learner in this browser until saved or cleared
+  const [draftOwner,setDraftOwner]=useState(null);
+  const draftKey=`tbi_assign_draft_${learnerId}`;
+  useEffect(()=>{
+    let d={};
+    try{d=JSON.parse(localStorage.getItem(`tbi_assign_draft_${learnerId}`)||"{}")||{};}catch(e){d={};}
+    setNewDate(d.date||"");setNewText(d.text||"");setNewSubInput(d.subInput||"");
+    setNewSubtasks(Array.isArray(d.subtasks)?d.subtasks:[]);
+    setNewLinkedPrayers(Array.isArray(d.linked)?d.linked:[]);
+    setDraftOwner(learnerId);
+  },[learnerId]);
+  const draftHasContent=!!(newDate||newText.trim()||newSubInput.trim()||newSubtasks.length||newLinkedPrayers.length);
+  useEffect(()=>{
+    if(draftOwner!==learnerId)return;
+    try{
+      if(!draftHasContent)localStorage.removeItem(draftKey);
+      else localStorage.setItem(draftKey,JSON.stringify({date:newDate,text:newText,subInput:newSubInput,subtasks:newSubtasks,linked:newLinkedPrayers}));
+    }catch(e){}
+  },[draftOwner,learnerId,newDate,newText,newSubInput,newSubtasks,newLinkedPrayers]);
+  function clearDraft(){setNewDate("");setNewText("");setNewSubInput("");setNewSubtasks([]);setNewLinkedPrayers([]);}
 
   async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
@@ -2780,6 +2940,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
         <Btn onClick={add} color={C.blue} disabled={saving}>{saving?"Sending…":"Save & Send Email"}</Btn>
         
         {!hasEmails&&<span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>No contact emails on file.</span>}
+        {draftHasContent&&<button onClick={()=>{if(window.confirm("Clear this unsaved assignment?"))clearDraft();}} style={{marginLeft:"auto",background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Clear draft</button>}
       </div>
     </div>}
     {assignments.length===0
@@ -2869,8 +3030,9 @@ function SmartReview({learnerId}) {
     (defaultRows||[]).forEach(d=>{defaults[dmKey(d.prayer_name,d.part)]={...d};});
     const activeLinked=new Set((assignments||[]).filter(a=>!a.done).flatMap(a=>a.linked_prayer_ids||[]));
     const items=[];
-    (rows||[]).filter(p=>!p.hidden_from_learner).forEach(p=>{
+    (rows||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,learnerRow)).forEach(p=>{
       const dm=defaults[dmKey(p.name,p.part)]||{};
+      const rPages=resolvePages(p.pages,dm.pages,voiceTrack);
       const selectedDefaultAudio=getDefaultAudioForVoice(dm,voiceTrack);
       const multiPage=p.pages&&p.pages.length>1;
       if(multiPage){
@@ -2884,13 +3046,13 @@ function SmartReview({learnerId}) {
             page_id:pg.id,
             page_index:pgIdx,
             is_page:true,
-            name:`${p.name} — Page ${pgIdx+1}`,
+            name:`${p.name} — ${pageLabel(pg,pgIdx)}`,
             status:pg.status||"In Progress",
             page:p.page,
-            effective_pdf:pg.pdf_url||null,
-            effective_pdf_name:pg.pdf_name||null,
-            effective_audio:pg.audio_url||null,
-            effective_audio_name:pg.audio_name||`${p.name} — Page ${pgIdx+1}`,
+            effective_pdf:(rPages[pgIdx]||{}).pdf_url||null,
+            effective_pdf_name:(rPages[pgIdx]||{}).pdf_name||null,
+            effective_audio:(rPages[pgIdx]||{}).audio_url||null,
+            effective_audio_name:(rPages[pgIdx]||{}).audio_name||`${p.name} — ${pageLabel(pg,pgIdx)}`,
             has_default_pdf:false,has_default_audio:false,
             sr_ease:pg.sr_ease,sr_reps:pg.sr_reps,sr_interval:pg.sr_interval,sr_due:pg.sr_due,
             is_assigned:activeLinked.has(p.id),
@@ -3652,7 +3814,7 @@ function AddLearnerModal({onAdd,onClose}) {
     try{
       await DB.upsertLearner(learner);
       await DB.upsertAttendance({learner_id:id});
-      const prayers=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:id,name:p.name,page:p.page||null,part:p.part,status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
+      const prayers=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:id,name:p.name,page:p.page||null,part:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
       await DB.insertPrayers(prayers);
       onAdd({...learner,id});
     }catch(e){
