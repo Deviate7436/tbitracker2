@@ -2336,11 +2336,21 @@ function PagesEditor({pages,onSave,onSinglePage}) {
 }
 
 function MultiPageEditor({prayer,onLinkUpdate}) {
-  return <PagesEditor
-    pages={prayer.pages||[]}
-    onSave={next=>onLinkUpdate(prayer.id,{pages:next})}
-    onSinglePage={(url,name)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:name})}
-  />;
+  const count=(prayer.pages||[]).length;
+  // Closed when pages exist, open when empty (keeps Upload & Split one click away)
+  const [open,setOpen]=useState(()=>count===0);
+  return <div style={{background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"12px 16px"}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:13,color:C.navy}}>
+      {open?"▲":"▼"} Multi-Page Media{count?` (${count} page${count!==1?"s":""})`:""}
+    </button>
+    {open&&<div style={{marginTop:10}}>
+      <PagesEditor
+        pages={prayer.pages||[]}
+        onSave={next=>onLinkUpdate(prayer.id,{pages:next})}
+        onSinglePage={(url,name)=>onLinkUpdate(prayer.id,{pdf:url,pdf_name:name})}
+      />
+    </div>}
+  </div>;
 }
 
 // Collapsible multi-page section inside a Default Media card (own component so its state is not inside a .map)
