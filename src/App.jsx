@@ -245,6 +245,7 @@ const DB = {
   // Archive
   getActiveLearners: () => sb("learners?select=*&archived=is.false&order=date_of_service"),
   getArchivedLearners: () => sb("learners?select=*&archived=is.true&order=date_of_service"),
+  updateLearnerFields: (id, patch) => sb(`learners?id=eq.${id}`, "PATCH", patch, {"Prefer":"return=representation"}),
   archiveLearner: (id, archived) => sb(`learners?id=eq.${id}`, "PATCH", {archived}, {"Prefer":"return=representation"}),
 
   // Media Library
@@ -2085,7 +2086,7 @@ function MonthlyUpdatesModal({onClose}) {
 }
 
 // ── Prayer Row ─────────────────────────────────────────────────────────────
-function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false,hideStatus=false,onDelete=null,reorder=null}) {
+function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,onLinkUpdate,onHideToggle,onNameSave,onPageSave,onUpdate,defaultMedia,voiceTrack="lower",simplified=false,hideStatus=false,onDelete=null,reorder=null,onDing=null}) {
   const {isMobile}=useBreakpoint();
   const [mediaOpen,setMediaOpen]=useState(false);
   const [notesOpen,setNotesOpen]=useState(false);
@@ -2197,7 +2198,7 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
         {isLead&&prayer.pages&&prayer.pages.length>1&&<button onClick={()=>setPageStatusOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{pageStatusOpen?"▲ Page Status":"▼ Page Status"}</button>}
         <button data-tut="tut-instructor-notes" onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:(prayer.notes_chat||[]).length?C.purple:C.midGray,background:(prayer.notes_chat||[]).length?"#f7f0ff":"none",border:(prayer.notes_chat||[]).length?`1px solid ${C.purple}44`:"1px solid #dee2e6",borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
-      {pageStatusOpen&&role==="instructor"&&isLead&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate}/>}
+      {pageStatusOpen&&role==="instructor"&&isLead&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate} onDing={onDing}/>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
         {/* Single media (used when pages.length <= 1) */}
         {(!prayer.pages||prayer.pages.length<=1)&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
@@ -2233,11 +2234,13 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
 }
 
 // ── Page Status Panel ──────────────────────────────────────────────────────
-function PageStatusPanel({prayer,onLinkUpdate}) {
+function PageStatusPanel({prayer,onLinkUpdate,onDing=null}) {
   const pages=prayer.pages||[];
   async function setPageStatus(pid,status){
+    const prevStatus=(pages.find(p=>p.id===pid)||{}).status||"Not Started";
     const updated=pages.map(p=>p.id===pid?{...p,status}:p);
     await onLinkUpdate(prayer.id,{pages:updated});
+    if(status==="Learned"&&prevStatus!=="Learned"&&onDing)onDing();
     // Roll up card status: Learned only if all pages Learned
     const allLearned=updated.length>0&&updated.every(p=>p.status==="Learned");
     if(allLearned&&prayer.status!=="Learned"){
@@ -2387,9 +2390,10 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   useEffect(()=>{
     if(role==="instructor") try{localStorage.setItem(`tbi_collapsed_${learnerId}`,JSON.stringify(collapsedParts));}catch{}
   },[collapsedParts,role,learnerId]);
-  const [hideNotStarted,setHideNotStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"true");}catch{return true;}});
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
   const [currentLearner,setCurrentLearner]=useState(null);
+  // Saved on the learner record (learners.hide_not_started); missing/null = hide
+  const hideNotStarted=currentLearner?currentLearner.hide_not_started!==false:true;
   const [showMoreLearning,setShowMoreLearning]=useState(false);
 
   function dmKey(name,part){return dmKeyOf(name,part);}
@@ -2420,7 +2424,6 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
     setLoading(false);
   }
   useEffect(()=>{load();},[learnerId,mediaRefreshKey,sectionsKey]);
-  useEffect(()=>{try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(hideNotStarted));}catch{}},[hideNotStarted,learnerId]);
 
   function handleSetDefaultMedia(prayerName,part,row){
     setDefaultMediaMap(prev=>({...prev,[dmKey(prayerName,part)]:row}));
@@ -2555,7 +2558,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
       {haftarahPrayers.map(p=><PrayerRow
         key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
         onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
-        onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
+        onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer} onDing={onDing}
         defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
         voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
         simplified={simplified}
@@ -2569,7 +2572,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
         {showMoreLearning&&moreLearningPrayers.map(p=><PrayerRow
           key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
-          onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
+          onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer} onDing={onDing}
           defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
           voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
           simplified={simplified}
@@ -2598,7 +2601,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
         {!isCollapsed&&pp.map(p=><PrayerRow
           key={p.id} prayer={p} role={role} isLead={isLead} instructorUser={instructorUser}
           onStatusChange={handleStatusChange} onLinkUpdate={handleLinkUpdate}
-          onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer}
+          onHideToggle={handleHideToggle} onNameSave={handleNameSave} onPageSave={handlePageSave} onUpdate={updatePrayer} onDing={onDing}
           defaultMedia={lookupDefaultMedia(defaultMediaMap,p.name,p.part)}
           voiceTrack={learnerVoiceTrack||currentLearner?.voice_track||"lower"}
           simplified={simplified}
@@ -3624,23 +3627,31 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
       {isLead&&l.category!=="rs_learner"&&<OptionalSectionToggles l={l} onSave={onSave}/>}
       {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input key={`agree-${l.id}`} defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
       <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
-        <HideNotStartedToggle learnerId={l.id}/>
+        <HideNotStartedToggle l={l} onSave={onSave}/>
       </div>
     </div>}
   </div>;
 }
 
 // ── Hide Not Started Toggle ────────────────────────────────────────────────
-function HideNotStartedToggle({learnerId}) {
-  const [checked,setChecked]=useState(()=>{try{return JSON.parse(localStorage.getItem(`hideNS_${learnerId}`)||"true");}catch{return true;}});
-  function toggle(e){
+function HideNotStartedToggle({l,onSave}) {
+  const [busy,setBusy]=useState(false);
+  const checked=l.hide_not_started!==false;
+  async function toggle(e){
     const v=e.target.checked;
-    setChecked(v);
-    try{localStorage.setItem(`hideNS_${learnerId}`,JSON.stringify(v));}catch{}
+    setBusy(true);
+    try{
+      await DB.updateLearnerFields(l.id,{hide_not_started:v});
+      onSave&&onSave({...l,hide_not_started:v});
+    }catch(err){
+      console.error(err);
+      alert("Could not save this setting. Make sure the hide_not_started column (boolean, default true) exists on the learners table in Supabase.");
+    }
+    setBusy(false);
   }
-  return <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
-    <input type="checkbox" checked={checked} onChange={toggle} style={{accentColor:C.navy,width:15,height:15}}/>
-    <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner view</span>
+  return <label style={{display:"flex",alignItems:"center",gap:8,cursor:busy?"wait":"pointer",userSelect:"none"}}>
+    <input type="checkbox" checked={checked} disabled={busy} onChange={toggle} style={{accentColor:C.navy,width:15,height:15}}/>
+    <span style={{fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Hide "Not Started" from learner view{busy?" — Saving…":""}</span>
   </label>;
 }
 
