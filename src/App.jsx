@@ -2195,10 +2195,10 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
         </div>
       </div>
       {role==="instructor"&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"0 18px 12px"}}>
-        {isLead&&prayer.pages&&prayer.pages.length>1&&<button onClick={()=>setPageStatusOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{pageStatusOpen?"▲ Page Status":"▼ Page Status"}</button>}
+        {prayer.pages&&prayer.pages.length>1&&<button onClick={()=>setPageStatusOpen(e=>!e)} style={{fontSize:11,color:C.blue,background:C.lightBlue,border:`1px solid ${C.blue}44`,borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{pageStatusOpen?"▲ Pages":"▼ Pages"}</button>}
         <button data-tut="tut-instructor-notes" onClick={()=>setNotesOpen(e=>!e)} style={{fontSize:11,color:(prayer.notes_chat||[]).length?C.purple:C.midGray,background:(prayer.notes_chat||[]).length?"#f7f0ff":"none",border:(prayer.notes_chat||[]).length?`1px solid ${C.purple}44`:"1px solid #dee2e6",borderRadius:8,cursor:"pointer",fontWeight:"800",padding:"5px 9px",fontFamily:"Raleway,sans-serif"}}>{notesOpen?"▲ Instructor Notes":"▼ Instructor Notes"}</button>
       </div>}
-      {pageStatusOpen&&role==="instructor"&&isLead&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate} onDing={onDing}/>}
+      {pageStatusOpen&&role==="instructor"&&<PageStatusPanel prayer={prayer} onLinkUpdate={onLinkUpdate} onDing={onDing} canEditStatus={isLead}/>}
       {mediaOpen&&role==="instructor"&&<div style={{borderTop:"1px solid #f0f2f5",padding:"16px 18px",background:"#fafbfc",display:"flex",flexDirection:"column",gap:14}}>
         {/* Single media (used when pages.length <= 1) */}
         {(!prayer.pages||prayer.pages.length<=1)&&<div style={{display:"flex",flexWrap:"wrap",gap:20,background:"white",border:"1px solid #e9ecef",borderRadius:10,padding:"14px 16px"}}>
@@ -2234,8 +2234,15 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
 }
 
 // ── Page Status Panel ──────────────────────────────────────────────────────
-function PageStatusPanel({prayer,onLinkUpdate,onDing=null}) {
+function PageStatusPanel({prayer,onLinkUpdate,onDing=null,canEditStatus=true}) {
   const pages=prayer.pages||[];
+  const [loggingId,setLoggingId]=useState(null);
+  function prettyDate(value){
+    if(!value)return "Never";
+    const d=new Date(value+"T12:00:00");
+    if(Number.isNaN(d.getTime()))return value;
+    return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+  }
   async function setPageStatus(pid,status){
     const prevStatus=(pages.find(p=>p.id===pid)||{}).status||"Not Started";
     const updated=pages.map(p=>p.id===pid?{...p,status}:p);
@@ -2249,17 +2256,38 @@ function PageStatusPanel({prayer,onLinkUpdate,onDing=null}) {
       await onLinkUpdate(prayer.id,{status:"In Progress",completion_date:null});
     }
   }
+  // Page review: page date + page history; card date + card history entry naming the page
+  async function logPageReview(pg,i){
+    const today=new Date().toISOString().split("T")[0];
+    setLoggingId(pg.id);
+    try{
+      const updated=pages.map(p=>p.id===pg.id?{...p,last_reviewed:today,reviews:[{id:genId(),date:today,note:""},...(p.reviews||[])]}:p);
+      const cardReviews=[{id:genId(),date:today,note:pageLabel(pg,i)},...(prayer.instructor_reviews||[])];
+      await onLinkUpdate(prayer.id,{pages:updated,last_reviewed:today,instructor_reviews:cardReviews});
+    }catch(e){console.error(e);alert("Could not log this review.");}
+    setLoggingId(null);
+  }
   return <div style={{borderTop:"1px solid #f0f2f5",padding:"14px 18px",background:"#f0f7ff"}}>
-    <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13,marginBottom:10}}>Per-Page Status</div>
+    <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:13,marginBottom:10}}>Pages</div>
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {pages.map((pg,i)=><div key={pg.id} style={{display:"flex",alignItems:"center",gap:10,background:"white",borderRadius:8,padding:"8px 12px",border:"1px solid #e9ecef"}}>
-        <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13,minWidth:60}}>{pageLabel(pg,i)}</span>
-        <select value={pg.status||"Not Started"} onChange={e=>setPageStatus(pg.id,e.target.value)} style={{padding:"4px 10px",borderRadius:8,border:`1px solid ${STATUS_COLORS[pg.status||"Not Started"]}`,background:`${STATUS_COLORS[pg.status||"Not Started"]}18`,color:STATUS_COLORS[pg.status||"Not Started"],fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
-          {STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>)}
+      {pages.map((pg,i)=>{
+        const st=pg.status||"Not Started";
+        const col=STATUS_COLORS[st];
+        return <div key={pg.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"white",borderRadius:8,padding:"8px 12px",border:"1px solid #e9ecef"}}>
+          <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:13,minWidth:60}}>{pageLabel(pg,i)}</span>
+          {canEditStatus
+            ?<select value={st} onChange={e=>setPageStatus(pg.id,e.target.value)} style={{padding:"4px 10px",borderRadius:8,border:`1px solid ${col}`,background:`${col}18`,color:col,fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
+              {STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            :<StatusBadge status={st}/>}
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+            {pg.last_reviewed&&<span style={{fontSize:11,color:C.green,fontFamily:"Raleway,sans-serif"}}>{prettyDate(pg.last_reviewed)}</span>}
+            <button onClick={()=>logPageReview(pg,i)} disabled={!!loggingId} style={{background:C.darkBlue,color:"white",border:"none",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:"700",cursor:loggingId?"not-allowed":"pointer",fontFamily:"Raleway,sans-serif",opacity:loggingId?0.6:1,flexShrink:0}}>{loggingId===pg.id?"Logging…":"Log Review"}</button>
+          </div>
+        </div>;
+      })}
     </div>
-    <p style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",margin:"10px 0 0",fontStyle:"italic"}}>Card shows "Learned" only when all pages are Learned.</p>
+    {canEditStatus&&<p style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif",margin:"10px 0 0",fontStyle:"italic"}}>Card shows "Learned" only when all pages are Learned.</p>}
   </div>;
 }
 
