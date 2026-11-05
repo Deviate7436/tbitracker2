@@ -209,7 +209,7 @@ const DB = {
   deleteLearner: (id) => sb(`learners?id=eq.${id}`, "DELETE"),
 
   // Prayers
-  getPrayers: async (lid) => migrateBahForLearner(lid, await sb(`prayers?learner_id=eq.${lid}&select=*&order=sort_order`)),
+  getPrayers: async (lid) => migrateLayoutForLearner(lid, await migrateBahForLearner(lid, await sb(`prayers?learner_id=eq.${lid}&select=*&order=sort_order`))),
   getPrayer: async(id) => {const r=await sb(`prayers?id=eq.${id}&select=*`);return Array.isArray(r)?r[0]:null;},
   upsertPrayer: (p) => sb("prayers?on_conflict=id", "POST", p, {"Prefer":"resolution=merge-duplicates,return=representation"}),
   updatePrayer: (id, patch) => sb(`prayers?id=eq.${id}`, "PATCH", patch, {"Prefer":"return=representation"}),
@@ -703,24 +703,73 @@ async function ensureOptionalSection(learnerId,section){
   }
 }
 
+// Bnei mitzvah layout (Nov 2026): Part 1 = #1-7, Part 2 = #8-16. rsPart = previous part, kept for RS learners.
 const DEFAULT_PRAYERS = [
   {name:"Torah Blessing – Before",page:172,part:1},
   {name:"Torah Blessing – After",page:172,part:1},
   {name:"Blessing Before Haftarah",page:175,part:1},
   {name:BAH_NAME,page:175,part:1,pageLabels:BAH_LABELS},
   {name:"Haftarah Trope",page:null,part:1},
-  {name:"Haftarah Reading",page:null,part:2},
-  {name:"Tallit Blessing",page:102,part:2},
+  {name:"Haftarah Reading",page:null,part:1,rsPart:2},
+  {name:"Tallit Blessing",page:102,part:1,rsPart:2},
   {name:"Torah Trope",page:null,part:2},
   {name:"Shema – part 1",page:41,part:2},
   {name:"Maftir Torah Reading",page:null,part:2},
-  {name:"Shema – part 2",page:42,part:3},
-  {name:"Torah Service – Shema-Echad-Gadlu",page:171,part:3},
-  {name:"V'shamru & Saturday Morning Kiddush",page:77,part:3},
-  {name:"Friday Night Kiddush",page:55,part:3},
-  {name:"Shalom Aleichem",page:5,part:4},
-  {name:"Aleinu",page:56,part:4},
+  {name:"Shema – part 2",page:42,part:2,rsPart:3},
+  {name:"Torah Service – Shema-Echad-Gadlu",page:171,part:2,rsPart:3},
+  {name:"V'shamru & Saturday Morning Kiddush",page:77,part:2,rsPart:3},
+  {name:"Friday Night Kiddush",page:55,part:2,rsPart:3},
+  {name:"Shalom Aleichem",page:5,part:2,rsPart:4},
+  {name:"Aleinu",page:56,part:2,rsPart:4},
 ];
+// Default Media stays keyed by the previous part, so moved cards keep their media (shared with RS learners).
+DEFAULT_PRAYERS.forEach(d=>{if(d.rsPart)SHARED_DEFAULT_MEDIA[`${d.name}|${d.part}`]=d.rsPart;});
+
+// One-time move of existing bnei mitzvah learners into the new layout (runs when their cards load).
+const LAYOUT_CAT_CACHE = {};
+const LAYOUT_INFLIGHT = {};
+async function migrateLayoutForLearner(lid,rows){
+  if(!Array.isArray(rows)||!lid)return rows;
+  const live=rows.filter(r=>!isRetiredPrayer(r));
+  const byName=Object.fromEntries(DEFAULT_PRAYERS.map((d,i)=>[d.name,{...d,idx:i}]));
+  // Trigger only when a default card is still in its previous part
+  const needs=live.some(r=>{const d=byName[r.name];return d&&d.rsPart&&Number(r.part)===d.rsPart;});
+  if(!needs)return rows;
+  if(!(lid in LAYOUT_CAT_CACHE)){
+    try{const lr=await sb(`learners?id=eq.${lid}&select=category`);LAYOUT_CAT_CACHE[lid]=((lr||[])[0]||{}).category||null;}
+    catch(e){console.error(e);return rows;}
+  }
+  if(LAYOUT_CAT_CACHE[lid]==="rs_learner")return rows;
+  if(!LAYOUT_INFLIGHT[lid]){
+    LAYOUT_INFLIGHT[lid]=(async()=>{
+      const changes={};
+      const inOld=live.filter(r=>[1,2,3,4].includes(Number(r.part)));
+      const extras1=[],extras2=[];
+      inOld.forEach(r=>{
+        const d=byName[r.name];
+        if(d){changes[r.id]={part:d.part,sort_order:d.idx};}
+        else if(Number(r.part)===1)extras1.push(r);
+        else extras2.push(r); // hand-added cards in parts 2-4 go to Part 2
+      });
+      const byOld=(a,b)=>(Number(a.part)-Number(b.part))||((a.sort_order??0)-(b.sort_order??0));
+      extras1.sort(byOld).forEach((r,i)=>{changes[r.id]={part:1,sort_order:100+i};});
+      extras2.sort(byOld).forEach((r,i)=>{changes[r.id]={part:2,sort_order:200+i};});
+      const ids=Object.keys(changes).filter(id=>{const r=rows.find(x=>x.id===id);return Number(r.part)!==changes[id].part||(r.sort_order??null)!==changes[id].sort_order;});
+      for(const id of ids){
+        await sb(`prayers?id=eq.${encodeURIComponent(id)}`,"PATCH",changes[id],{"Prefer":"return=representation"});
+      }
+      return changes;
+    })();
+  }
+  try{
+    const changes=await LAYOUT_INFLIGHT[lid];
+    return rows.map(r=>changes[r.id]?{...r,...changes[r.id]}:r);
+  }catch(e){
+    console.error("Layout move failed:",e);
+    delete LAYOUT_INFLIGHT[lid];
+    return rows;
+  }
+}
 
 const STATUS_OPTIONS = ["Not Started","In Progress","Needs Review","Learned"];
 const STATUS_COLORS = {"Not Started":"#adb5bd","In Progress":C.gold,"Needs Review":C.blue,"Learned":C.green};
@@ -2440,7 +2489,7 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
       setDefaultMediaMap(dmMap);
       let prayers_data=pRows||[];
       if(prayers_data.length===0){
-        const seeded=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:learnerId,name:p.name,page:p.page||null,part:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
+        const seeded=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:learnerId,name:p.name,page:p.page||null,part:(learnerRow?.category==="rs_learner"&&p.rsPart)?p.rsPart:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
         await DB.insertPrayers(seeded);
         prayers_data=seeded;
       }
@@ -3917,7 +3966,7 @@ function AddLearnerModal({onAdd,onClose}) {
     try{
       await DB.upsertLearner(learner);
       await DB.upsertAttendance({learner_id:id});
-      const prayers=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:id,name:p.name,page:p.page||null,part:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
+      const prayers=DEFAULT_PRAYERS.map((p,i)=>({id:genId(),learner_id:id,name:p.name,page:p.page||null,part:(learner.category==="rs_learner"&&p.rsPart)?p.rsPart:p.part,pages:p.pageLabels?p.pageLabels.map(l=>({id:genId(),label:l,status:"Not Started",pdf_url:null,pdf_name:null,audio_url:null,audio_name:null})):[],status:"Not Started",target_date:null,completion_date:null,last_reviewed:null,pdf:null,audio:null,pdf_name:null,audio_name:null,subtasks:[],instructor_reviews:[],notes:"",sort_order:i,hidden_from_learner:false,learner_sort_order:null}));
       await DB.insertPrayers(prayers);
       onAdd({...learner,id});
     }catch(e){
