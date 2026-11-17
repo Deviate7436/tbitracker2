@@ -178,6 +178,38 @@ async function uploadPdfToStorage(file) {
   return `${SUPA_URL}/storage/v1/object/public/${STORAGE_PDF_BUCKET}/${encodedPath}`;
 }
 
+// ── Read-only preview ("View as" Learner/Parent) ─────────────────────────────
+// While on, any write to Supabase (rest + storage) or the email function is answered
+// locally with a fake success and never sent. Reads still go through.
+let PREVIEW_READ_ONLY=false;
+let ORIGINAL_FETCH=null;
+let PREVIEW_TOAST_AT=0;
+function setPreviewReadOnly(on){
+  PREVIEW_READ_ONLY=!!on;
+  if(typeof window==="undefined")return;
+  if(!ORIGINAL_FETCH){
+    ORIGINAL_FETCH=window.fetch.bind(window);
+    window.fetch=async(input,init={})=>{
+      const url=typeof input==="string"?input:(input&&input.url)||"";
+      const method=String((init&&init.method)||(input&&input.method)||"GET").toUpperCase();
+      const isWrite=!["GET","HEAD","OPTIONS"].includes(method);
+      const guarded=url.startsWith(SUPA_URL)||url.includes("/.netlify/functions/");
+      if(PREVIEW_READ_ONLY&&isWrite&&guarded){
+        const now=Date.now();
+        if(now-PREVIEW_TOAST_AT>1500){PREVIEW_TOAST_AT=now;try{window.dispatchEvent(new CustomEvent("tbi-preview-blocked"));}catch(e){}}
+        let payload="[]";
+        if(url.includes("/rest/v1/")&&method!=="DELETE"){
+          try{const b=init&&typeof init.body==="string"?JSON.parse(init.body):null;payload=JSON.stringify(b==null?[]:(Array.isArray(b)?b:[b]));}catch(e){payload="[]";}
+        } else if(!url.includes("/rest/v1/")){
+          payload="{}";
+        }
+        return new Response(payload,{status:200,headers:{"Content-Type":"application/json"}});
+      }
+      return ORIGINAL_FETCH(input,init);
+    };
+  }
+}
+
 async function sb(path, method="GET", body=null, extra_headers={}) {
   const headers = {
     "apikey": SUPA_KEY,
@@ -3735,41 +3767,35 @@ function HideNotStartedToggle({l,onSave}) {
 // ── Login ──────────────────────────────────────────────────────────────────
 // ── Masked Passcode Input ───────────────────────────────────────────────────
 function MaskedPasscodeInput({value, onChange, onKeyDown, style, placeholder, autoFocus}) {
-  const [revealed, setRevealed] = useState(false);
-  const timeoutRef = useRef(null);
-  useEffect(()=>()=>{ if(timeoutRef.current) clearTimeout(timeoutRef.current); },[]);
-
+  // Every character shows as a dot immediately; the real value is never displayed.
   function handleChange(e){
     const displayed = e.target.value;
     let newReal;
     if(displayed.length > value.length){
-      newReal = value + displayed.slice(value.length);
-      setRevealed(true);
-      if(timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(()=>setRevealed(false), 600);
+      // Characters typed or pasted are whatever is not a dot
+      newReal = value + displayed.replace(/•/g,"");
     } else if(displayed.length < value.length){
       newReal = value.slice(0, displayed.length);
-      setRevealed(false);
-      if(timeoutRef.current) clearTimeout(timeoutRef.current);
     } else {
-      newReal = displayed;
+      newReal = value;
     }
     onChange(newReal);
   }
-
   const dots = "•".repeat(value.length);
-  const displayValue = revealed && value.length>0 ? dots.slice(0,-1)+value.slice(-1) : dots;
-
   return <input
-    value={displayValue}
+    value={dots}
     onChange={handleChange}
     onKeyDown={onKeyDown}
     style={style}
     placeholder={placeholder}
     autoFocus={autoFocus}
     autoCapitalize="characters"
+    autoComplete="off"
     autoCorrect="off"
     spellCheck={false}
+    data-lpignore="true"
+    data-1p-ignore="true"
+    name="tbi-passcode"
   />;
 }
 
@@ -4250,6 +4276,8 @@ export default function App() {
   const [deleteConfirm,setDeleteConfirm]=useState(null); // learner to delete
   const [archiveConfirm,setArchiveConfirm]=useState(null);
   const [currentLearnerData,setCurrentLearnerData]=useState(null); // for learner header
+  const [previewRole,setPreviewRole]=useState(null); // "learner" | "parent" while a lead/admin previews
+  const [previewToast,setPreviewToast]=useState(false);
   const [assignedLearnerIds,setAssignedLearnerIds]=useState(null); // Set of learner ids assigned to this team member, or null if not loaded/not applicable
 
   // Team members and leads see "Your Learners" first in the dropdown — fetch their assignments on login.
@@ -4355,6 +4383,7 @@ export default function App() {
   },[role,learnerId,selectedLearner]);
 
   function signOut(){
+    setPreviewRole(null);setPreviewReadOnly(false);
     setRole(null);setLearnerId(null);setSelectedLearner(null);persistInstructor(null);
     setLearners([]);setCurrentLearnerData(null);setShowSettings(false);goTab("prayers");
     persistLogin(null,null);
@@ -4415,6 +4444,22 @@ export default function App() {
     return date.toLocaleDateString(undefined,{month:"2-digit",day:"2-digit",year:"numeric"});
   }
 
+  const canPreview=role==="instructor"&&["lead","admin"].includes(instructorUser?.role);
+  const previewLearner=(canPreview&&previewRole)?learners.find(l=>l.id===selectedLearner)||null:null;
+  const effRole=previewLearner?previewRole:role;
+  const viewLearnerData=previewLearner||currentLearnerData;
+  const previewing=!!previewLearner;
+  useEffect(()=>{setPreviewReadOnly(previewing);return ()=>setPreviewReadOnly(false);},[previewing]);
+  useEffect(()=>{
+    function onBlocked(){setPreviewToast(true);clearTimeout(window.__tbiPrevToastT);window.__tbiPrevToastT=setTimeout(()=>setPreviewToast(false),2200);}
+    window.addEventListener("tbi-preview-blocked",onBlocked);
+    return ()=>window.removeEventListener("tbi-preview-blocked",onBlocked);
+  },[]);
+  function startPreview(r){
+    if(!r){setPreviewRole(null);goTab("prayers");return;}
+    if(!selectedLearner)return;
+    setShowSettings(false);setPreviewRole(r);goTab(r==="learner"?"home":"prayers");
+  }
   const activeLearner=role==="instructor"?learners.find(l=>l.id===selectedLearner):currentLearnerData;
   const isRSActive=activeLearner?.category==="rs_learner";
   const yourLearnerIds=(()=>{
@@ -4424,19 +4469,19 @@ export default function App() {
     if(me)learners.forEach(l=>{if(parseInstructorNames(l.instructor).some(n=>normalizeCode(n)===me))s.add(l.id);});
     return s;
   })();
-  const tabs=(role==="instructor"
+  const tabs=(effRole==="instructor"
     ?[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat Attendance"}]
-    :role==="parent"
+    :effRole==="parent"
     ?[{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat Attendance"}]
     :[{id:"home",label:"🏠 Home"},{id:"prayers",label:"📖 Prayers"},{id:"assignments",label:"📋 Assignments"},{id:"services",label:"🕍 Shabbat"}]
   ).filter(t=>!isRSActive||t.id==="prayers");
-  const showNavTabs=!(role==="learner"&&learnerViewMode!=="full");
+  const showNavTabs=!(effRole==="learner"&&learnerViewMode!=="full");
   useEffect(()=>{
     if(isRSActive&&activeTab!=="prayers") goTab("prayers");
   },[isRSActive,activeTab]);
 
-  const isLead=role!=="instructor"||["lead","admin"].includes(instructorUser?.role);
-  const isAdmin=role==="instructor"&&instructorUser?.role==="admin";
+  const isLead=effRole!=="instructor"||["lead","admin"].includes(instructorUser?.role);
+  const isAdmin=effRole==="instructor"&&instructorUser?.role==="admin";
   if(!role) return <LoginScreen onLogin={handleLogin}/>;
 
   return <div style={{minHeight:"100vh",background:C.lightGray,fontFamily:"Raleway,sans-serif"}} onClick={()=>setLearnerDropdownMenu(null)}>
@@ -4476,23 +4521,36 @@ export default function App() {
         <div style={{color:C.blue,fontSize:isMobile?9:11,letterSpacing:2,textTransform:"uppercase",fontWeight:"700",marginTop:2}}>Progress Tracker</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
-        {!isMobile&&role==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":instructorUser.role==="admin"?"Admin":"Team Member"}</span>}
-        {!isMobile&&role==="parent"&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>Parent</span>}
+        {!isMobile&&effRole==="instructor"&&instructorUser&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>{instructorUser.name}, {instructorUser.role==="lead"?"Lead Instructor":instructorUser.role==="admin"?"Admin":"Team Member"}</span>}
+        {!isMobile&&effRole==="parent"&&<span style={{color:C.midGray,fontSize:13,fontWeight:"600"}}>Parent</span>}
         {instructorUser&&instructorUser.role==="team"&&<a href="mailto:cantorchilds@tbiport.org?subject=Question from Team Member" style={{padding:isMobile?"5px 8px":"6px 12px",borderRadius:8,border:`1px solid ${C.blue}55`,background:C.lightBlue,color:C.blue,fontSize:isMobile?11:12,fontFamily:"Raleway,sans-serif",fontWeight:"700",textDecoration:"none",flexShrink:0}}>✉ Contact Cantor David</a>}
-        {role==="instructor"&&isLead&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
-        {role==="instructor"&&instructorUser?.role==="team"&&<button onClick={()=>setShowTutorial(true)} style={{background:"none",border:"1px solid #dee2e6",color:C.navy,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>❓ Tutorial</button>}
+        {effRole==="instructor"&&isLead&&<button onClick={()=>setShowSettings(true)} style={{background:C.lightBlue,border:`1px solid ${C.blue}55`,color:C.blue,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>Settings</button>}
+        {effRole==="instructor"&&instructorUser?.role==="team"&&<button onClick={()=>setShowTutorial(true)} style={{background:"none",border:"1px solid #dee2e6",color:C.navy,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"700"}}>❓ Tutorial</button>}
+        {canPreview&&<div role="group" aria-label="View as" style={{display:"inline-flex",border:`1px solid ${C.blue}55`,borderRadius:8,overflow:"hidden"}}>
+          {[["instructor",isMobile?"Instr.":"Instructor"],["learner","Learner"],["parent","Parent"]].map(([r,lab])=>{
+            const on=(r==="instructor"&&!previewing)||(previewing&&previewRole===r);
+            const disabled=r!=="instructor"&&!selectedLearner;
+            return <button key={r} disabled={disabled} onClick={()=>startPreview(r==="instructor"?null:r)} title={disabled?"Select a learner first":`View as ${lab}`} style={{background:on?C.blue:"white",color:on?"white":C.blue,border:"none",padding:isMobile?"5px 7px":"6px 11px",fontSize:isMobile?11:12,fontWeight:"700",fontFamily:"Raleway,sans-serif",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1}}>{lab}</button>;
+          })}
+        </div>}
         <button onClick={signOut} style={{background:"none",border:"1px solid #dee2e6",color:C.midGray,borderRadius:8,padding:isMobile?"5px 10px":"6px 14px",cursor:"pointer",fontSize:isMobile?12:13,fontFamily:"Raleway,sans-serif",fontWeight:"600"}}>Sign Out</button>
       </div>
     </div>
 
+    {previewing&&<div style={{background:C.gold,color:C.navy,padding:isMobile?"8px 12px":"9px 32px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontFamily:"Raleway,sans-serif",fontSize:13,fontWeight:"700",position:"sticky",top:isMobile?52:66,zIndex:99}}>
+      <span>👁 Previewing as {previewLearner.name} ({previewRole==="learner"?"Learner":"Parent"}) · Read-only</span>
+      <button onClick={()=>startPreview(null)} style={{marginLeft:"auto",background:C.navy,color:"white",border:"none",borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:"800",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>Exit</button>
+    </div>}
+    {previewToast&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:C.navy,color:"white",padding:"8px 16px",borderRadius:20,fontFamily:"Raleway,sans-serif",fontSize:13,fontWeight:"700",zIndex:5000,boxShadow:"0 6px 20px rgba(0,0,0,0.25)"}}>Preview — changes not saved</div>}
+
     <div style={{maxWidth:isDesktop?960:700,margin:"0 auto",padding:isMobile?"16px 12px":"28px 20px"}}>
 
       {/* Learner header (learner role) */}
-      {role==="learner"&&currentLearnerData&&<LearnerHeaderCard learner={currentLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
-      {role==="parent"&&currentLearnerData&&<ParentHeaderCard learner={currentLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
+      {effRole==="learner"&&viewLearnerData&&<LearnerHeaderCard learner={viewLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
+      {effRole==="parent"&&viewLearnerData&&<ParentHeaderCard learner={viewLearnerData} isMobile={isMobile} formatServiceDate={formatServiceDate}/>}
 
       {/* Instructor learner selector — dropdown sorted by date */}
-      {role==="instructor"&&<div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
+      {effRole==="instructor"&&<div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
         {loadingLearners?<span style={{color:C.midGray,fontSize:14,fontFamily:"Raleway,sans-serif"}}>Loading learners…</span>:<>
           <div data-tut="tut-learner-select" style={{position:"relative",flex:1,minWidth:200}}>
             <select value={selectedLearner||""} onChange={e=>setSelectedLearner(e.target.value)}
@@ -4536,7 +4594,7 @@ export default function App() {
       </div>}
 
       {/* Instructor learner info card */}
-      {selectedLearner&&role==="instructor"&&(()=>{
+      {selectedLearner&&effRole==="instructor"&&(()=>{
         const l=learners.find(x=>x.id===selectedLearner)||archivedLearners.find(x=>x.id===selectedLearner);
         if(!l)return null;
         return <InstructorLearnerCard key={l.id} isLead={isLead} instructorUser={instructorUser}
@@ -4550,7 +4608,7 @@ export default function App() {
       })()}
 
       {/* Nav tabs */}
-      {showNavTabs&&(role==="instructor"
+      {showNavTabs&&(effRole==="instructor"
         ?<div style={{marginBottom:20}}>
           <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
             {[{id:"prayers",label:"📖 Prayers & Readings"},{id:"assignments",label:"📋 Assignments"}].filter(t=>!isRSActive||t.id==="prayers").map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{flex:"1 1 140px",padding:isMobile?"11px 12px":"13px 20px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"800",fontSize:isMobile?14:16,cursor:"pointer",whiteSpace:"nowrap",textAlign:"center"}}>{t.label}</button>)}
@@ -4563,23 +4621,23 @@ export default function App() {
           {tabs.map(t=><button key={t.id} onClick={()=>goTab(t.id)} style={{padding:isMobile?"8px 10px":"8px 12px",borderRadius:10,border:`2px solid ${activeTab===t.id?C.blue:"#dee2e6"}`,background:activeTab===t.id?C.blue:"white",color:activeTab===t.id?"white":C.navy,fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:isMobile?12:13,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,width:!isMobile?168:undefined,textAlign:"center"}}>{t.label}</button>)}
         </div>
       )}
-      {role==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&!isRSActive&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
+      {effRole==="learner"&&learnerViewMode!=="full"&&activeTab!=="home"&&!isRSActive&&<button onClick={()=>goTab("home")} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"white",border:"none",borderRadius:999,padding:"9px 16px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"Raleway,sans-serif",margin:"0 0 16px",boxShadow:"0 4px 12px rgba(42,90,135,.22)"}}>← Home</button>}
 
-      {(selectedLearner||(role==="parent"&&learnerId))&&<>
-        {activeTab==="home"&&role==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
-        {activeTab==="prayers"    &&<PrayerTracker  sectionsKey={`${activeLearner?.show_torah_service?1:0}${activeLearner?.show_shacharit?1:0}${activeLearner?.show_maariv?1:0}${activeLearner?.category||""}`} learnerId={selectedLearner||learnerId} role={role} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={role==="learner"&&learnerViewMode!=="full"}/>}
-        {activeTab==="assignments"&&!isRSActive&&<Assignments    learnerId={selectedLearner||learnerId} role={role} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
-        {activeTab==="services"   &&!isRSActive&&<ServiceAttendance learnerId={selectedLearner||learnerId} role={role} isLead={isLead}/>}
-      </>}
-      {role==="learner"&&currentLearnerData?.instructor&&<div style={{textAlign:"center",padding:"24px 0 8px"}}>
-        <a href={`mailto:${instructorEmails(currentLearnerData.instructor)}?subject=Question from ${currentLearnerData.name}`} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
+      {(selectedLearner||(effRole==="parent"&&learnerId))&&<div key={`view-${effRole}`}>
+        {activeTab==="home"&&effRole==="learner"&&!isRSActive&&<SimplifiedLearnerHome learnerId={selectedLearner} onChoose={goTab}/>}
+        {activeTab==="prayers"    &&<PrayerTracker  sectionsKey={`${activeLearner?.show_torah_service?1:0}${activeLearner?.show_shacharit?1:0}${activeLearner?.show_maariv?1:0}${activeLearner?.category||""}`} learnerId={selectedLearner||learnerId} role={effRole} isLead={isLead} instructorUser={instructorUser} onDing={()=>setShowDing(true)} mediaRefreshKey={settingsRefreshKey} learnerVoiceTrack={activeLearner?.voice_track||null} simplified={effRole==="learner"&&learnerViewMode!=="full"}/>}
+        {activeTab==="assignments"&&!isRSActive&&<Assignments    learnerId={selectedLearner||learnerId} role={effRole} isLead={isLead} learner={learners.find(l=>l.id===selectedLearner)||currentLearnerData}/>}
+        {activeTab==="services"   &&!isRSActive&&<ServiceAttendance learnerId={selectedLearner||learnerId} role={effRole} isLead={isLead}/>}
+      </div>}
+      {effRole==="learner"&&viewLearnerData?.instructor&&<div style={{textAlign:"center",padding:"24px 0 8px"}}>
+        <a href={`mailto:${instructorEmails(viewLearnerData.instructor)}?subject=Question from ${viewLearnerData.name}`} style={{display:"inline-block",background:"white",border:`2px solid ${C.blue}`,color:C.blue,borderRadius:12,padding:"12px 24px",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,textDecoration:"none"}}>✉️ Any questions? Email your instructor!</a>
       </div>}
       {isMobile&&<div style={{height:32}}/>}
     </div>
 
     {showTutorial  &&<TutorialOverlay steps={TEAM_TOUR_STEPS} goTab={goTab} onClose={()=>setShowTutorial(false)}/>}
     {showDing      &&<DingModal       onClose={()=>setShowDing(false)}/>}
-    {showSettings&&role==="instructor"&&isLead&&<SettingsModal learnerId={selectedLearner} instructorUser={instructorUser} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
+    {showSettings&&effRole==="instructor"&&isLead&&<SettingsModal learnerId={selectedLearner} instructorUser={instructorUser} onClose={()=>setShowSettings(false)} onMediaChange={()=>setSettingsRefreshKey(k=>k+1)} archivedLearners={archivedLearners} showArchived={showArchived} setShowArchived={setShowArchived} loadArchivedLearners={loadArchivedLearners} formatServiceDate={formatServiceDate} handleRestore={handleRestore} setDeleteConfirm={setDeleteConfirm}/>}
     {showAddLearner&&<AddLearnerModal onAdd={l=>{
       const sorted=[...learners,l].sort((a,b)=>{if(!a.date_of_service)return 1;if(!b.date_of_service)return -1;return a.date_of_service<b.date_of_service?-1:1;});
       setLearners(sorted);setSelectedLearner(l.id);setShowAddLearner(false);
