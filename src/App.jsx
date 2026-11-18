@@ -1194,16 +1194,101 @@ function ConfirmModal({message,onConfirm,onCancel}) {
   </div>;
 }
 
-function PdfCanvasDocument({ url, title }) {
+// ── PDF annotation helpers ──────────────────────────────────────────────────
+// Annotations: { [pdfPageNumber]: [item] }, coordinates normalized 0..1 to page width/height.
+// item: {t:"pen"|"hl", c, w (fraction of page width), pts:[[x,y],...]} or {t:"text", c, x, y, s (fraction of width), text}
+const ANNOT_COLORS=["#d62828","#1d4ed8","#15803d","#111111"];
+const ANNOT_HL_COLOR="#ffd400";
+function hasAnnotations(a){return !!a&&Object.values(a).some(v=>Array.isArray(v)&&v.length>0);}
+function cleanAnnotations(a){const out={};Object.entries(a||{}).forEach(([k,v])=>{if(Array.isArray(v)&&v.length)out[k]=v;});return out;}
+function drawAnnotItems(ctx,items,W,H){
+  (items||[]).forEach(it=>{
+    if(!it)return;
+    if(it.t==="pen"||it.t==="hl"){
+      const pts=it.pts||[];if(!pts.length)return;
+      ctx.save();
+      ctx.globalAlpha=it.t==="hl"?0.35:1;
+      ctx.strokeStyle=it.t==="hl"?ANNOT_HL_COLOR:(it.c||"#d62828");
+      ctx.fillStyle=ctx.strokeStyle;
+      ctx.lineWidth=Math.max(1,(it.w||0.004)*W);
+      ctx.lineCap="round";ctx.lineJoin="round";
+      if(pts.length===1){ctx.beginPath();ctx.arc(pts[0][0]*W,pts[0][1]*H,ctx.lineWidth/2,0,Math.PI*2);ctx.fill();}
+      else{ctx.beginPath();ctx.moveTo(pts[0][0]*W,pts[0][1]*H);for(let k=1;k<pts.length;k++)ctx.lineTo(pts[k][0]*W,pts[k][1]*H);ctx.stroke();}
+      ctx.restore();
+    } else if(it.t==="text"){
+      const size=(it.s||0.028)*W;
+      ctx.save();
+      ctx.fillStyle=it.c||"#d62828";
+      ctx.font=`700 ${size}px Raleway, sans-serif`;
+      ctx.textBaseline="top";
+      String(it.text||"").split("\n").forEach((ln,k)=>ctx.fillText(ln,it.x*W,it.y*H+k*size*1.2));
+      ctx.restore();
+    }
+  });
+}
+function hexToRgb01(hex){const h=String(hex||"#000").replace("#","");const n=parseInt(h.length===3?h.split("").map(c=>c+c).join(""):h,16);return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
+async function buildAnnotatedPdf(bytes,annotations){
+  const lib=await loadPdfLibModule();
+  const {PDFDocument,rgb,StandardFonts,LineCapStyle}=lib;
+  const doc=await PDFDocument.load(bytes);
+  const font=await doc.embedFont(StandardFonts.HelveticaBold);
+  const pages=doc.getPages();
+  Object.entries(annotations||{}).forEach(([pn,items])=>{
+    const page=pages[Number(pn)-1];if(!page)return;
+    const box=(page.getCropBox&&page.getCropBox())||{x:0,y:0,...page.getSize()};
+    const W=box.width,H=box.height,x0=box.x||0,y0=box.y||0;
+    (items||[]).forEach(it=>{
+      try{
+        if(it.t==="pen"||it.t==="hl"){
+          const pts=it.pts||[];if(!pts.length)return;
+          const P=pts.map(([x,y])=>[x*W,y*H]);
+          const d=P.length===1?`M ${P[0][0]} ${P[0][1]} L ${P[0][0]+0.01} ${P[0][1]}`:"M "+P.map(([x,y])=>`${x.toFixed(2)} ${y.toFixed(2)}`).join(" L ");
+          const [r,g,b]=hexToRgb01(it.t==="hl"?ANNOT_HL_COLOR:it.c);
+          const opts={x:x0,y:y0+H,borderColor:rgb(r,g,b),borderWidth:Math.max(0.5,(it.w||0.004)*W),borderOpacity:it.t==="hl"?0.35:1};
+          if(LineCapStyle)opts.borderLineCap=LineCapStyle.Round;
+          page.drawSvgPath(d,opts);
+        } else if(it.t==="text"){
+          const size=(it.s||0.028)*W;const [r,g,b]=hexToRgb01(it.c);
+          String(it.text||"").split("\n").forEach((ln,k)=>{
+            try{page.drawText(ln,{x:x0+it.x*W,y:y0+H-it.y*H-size*(k*1.2+0.85),size,font,color:rgb(r,g,b)});}
+            catch(e){console.warn("Skipped a note the PDF font cannot show:",ln);}
+          });
+        }
+      }catch(e){console.warn("Annotation skipped:",e);}
+    });
+  });
+  return await doc.save();
+}
+
+function PdfCanvasDocument({ url, title, annotations=null, canAnnotate=false, onSaveAnnotations=null, onAnnotatingChange=null }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [rendered, setRendered] = useState(0);
+  const [annotating, setAnnotating] = useState(false);
+  const [tool, setTool] = useState("pen");
+  const [color, setColor] = useState(ANNOT_COLORS[0]);
+  const [draft, setDraftState] = useState({});
+  const [history, setHistory] = useState([]);
+  const [show, setShow] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const pagesRef = useRef({});        // pageNumber -> {overlay, W, H, pr}
+  const pdfBytesRef = useRef(null);
+  const draftRef = useRef({});
+  const liveRef = useRef(null);       // stroke being drawn
+  const handlersRef = useRef({});
+  const displayed = annotating ? draft : (annotations || {});
+  const saved = annotations || {};
+  function setDraft(next){draftRef.current=next;setDraftState(next);}
+  function commit(next){const prev=draftRef.current;setHistory(h=>[...h,prev]);setDraft(next);}
 
   useEffect(() => {
     let cancelled = false;
     let pdfDoc = null;
     const container = containerRef.current;
     if (container) container.replaceChildren();
+    pagesRef.current = {};
 
     async function renderPdf() {
       setLoading(true);
@@ -1214,6 +1299,7 @@ function PdfCanvasDocument({ url, title }) {
           fetchAsArrayBuffer(pdfFetchCandidates(url))
         ]);
         if (cancelled) return;
+        try { pdfBytesRef.current = pdfData.slice(0); } catch (e) { pdfBytesRef.current = null; }
 
         const loadingTask = pdfjs.getDocument({ data: pdfData });
         pdfDoc = await loadingTask.promise;
@@ -1255,6 +1341,11 @@ function PdfCanvasDocument({ url, title }) {
           label.style.borderBottom = "1px solid #e9ecef";
           label.style.background = "#f8f9fa";
 
+          const stage = document.createElement("div");
+          stage.style.position = "relative";
+          stage.style.width = `${viewport.width}px`;
+          stage.style.height = `${viewport.height}px`;
+
           const canvas = document.createElement("canvas");
           canvas.setAttribute("aria-label", `${title || "PDF"} page ${pageNumber}`);
           canvas.style.display = "block";
@@ -1266,13 +1357,34 @@ function PdfCanvasDocument({ url, title }) {
           canvas.width = Math.floor(viewport.width * pixelRatio);
           canvas.height = Math.floor(viewport.height * pixelRatio);
 
+          // Annotation layer
+          const overlay = document.createElement("canvas");
+          const opr = Math.min(3, Math.max(2, deviceRatio));
+          overlay.width = Math.floor(viewport.width * opr);
+          overlay.height = Math.floor(viewport.height * opr);
+          overlay.style.position = "absolute";
+          overlay.style.left = "0";
+          overlay.style.top = "0";
+          overlay.style.width = `${viewport.width}px`;
+          overlay.style.height = `${viewport.height}px`;
+          overlay.style.pointerEvents = "none";
+          const pn = pageNumber;
+          overlay.addEventListener("pointerdown", e => handlersRef.current.down && handlersRef.current.down(pn, e));
+          overlay.addEventListener("pointermove", e => handlersRef.current.move && handlersRef.current.move(pn, e));
+          overlay.addEventListener("pointerup", e => handlersRef.current.up && handlersRef.current.up(pn, e));
+          overlay.addEventListener("pointercancel", e => handlersRef.current.up && handlersRef.current.up(pn, e));
+          pagesRef.current[pageNumber] = { overlay, W: viewport.width, H: viewport.height, pr: opr };
+
+          stage.appendChild(canvas);
+          stage.appendChild(overlay);
           pageWrap.appendChild(label);
-          pageWrap.appendChild(canvas);
+          pageWrap.appendChild(stage);
           target.appendChild(pageWrap);
 
           const context = canvas.getContext("2d");
           context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
           await page.render({ canvasContext: context, viewport }).promise;
+          if (!cancelled) setRendered(t => t + 1);
         }
       } catch (e) {
         console.warn("PDF.js render failed", e);
@@ -1289,10 +1401,151 @@ function PdfCanvasDocument({ url, title }) {
         try { pdfDoc.destroy(); } catch (e) {}
       }
       if (containerRef.current) containerRef.current.replaceChildren();
+      pagesRef.current = {};
     };
   }, [url, title]);
 
+  function redrawPage(pn, extra) {
+    const pg = pagesRef.current[pn]; if (!pg) return;
+    const ctx = pg.overlay.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, pg.overlay.width, pg.overlay.height);
+    ctx.setTransform(pg.pr, 0, 0, pg.pr, 0, 0);
+    if (annotating || show) drawAnnotItems(ctx, (annotating ? draftRef.current : saved)[pn] || [], pg.W, pg.H);
+    if (extra) drawAnnotItems(ctx, [extra], pg.W, pg.H);
+  }
+  // Redraw all overlays and set pointer behavior
+  useEffect(() => {
+    Object.keys(pagesRef.current).forEach(pn => {
+      const pg = pagesRef.current[pn];
+      pg.overlay.style.pointerEvents = annotating ? "auto" : "none";
+      pg.overlay.style.touchAction = annotating ? "none" : "auto";
+      pg.overlay.style.cursor = annotating ? (tool === "text" ? "text" : "crosshair") : "default";
+      redrawPage(pn);
+    });
+  });
+
+  function norm(pn, e) {
+    const pg = pagesRef.current[pn];
+    const r = pg.overlay.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    return [x, y];
+  }
+  function eraseAt(pn, [x, y]) {
+    const pg = pagesRef.current[pn]; if (!pg) return;
+    const items = draftRef.current[pn] || [];
+    const R = 12;
+    const keep = items.filter(it => {
+      if (it.t === "text") {
+        const size = (it.s || 0.028) * pg.W;
+        const lines = String(it.text || "").split("\n");
+        const w = Math.max(...lines.map(l => l.length)) * size * 0.6;
+        const h = lines.length * size * 1.2;
+        const px = x * pg.W, py = y * pg.H, tx = it.x * pg.W, ty = it.y * pg.H;
+        return !(px >= tx - R && px <= tx + w + R && py >= ty - R && py <= ty + h + R);
+      }
+      const lim = R + ((it.w || 0.004) * pg.W) / 2;
+      return !(it.pts || []).some(([a, b]) => Math.hypot((a - x) * pg.W, (b - y) * pg.H) < lim);
+    });
+    if (keep.length !== items.length) commit({ ...draftRef.current, [pn]: keep });
+  }
+  handlersRef.current = {
+    down(pn, e) {
+      if (!annotating) return;
+      e.preventDefault();
+      try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+      const pos = norm(pn, e);
+      if (tool === "text") {
+        const txt = window.prompt("Note text:");
+        if (txt && txt.trim()) commit({ ...draftRef.current, [pn]: [...(draftRef.current[pn] || []), { t: "text", c: color, x: pos[0], y: pos[1], s: 0.028, text: txt.trim() }] });
+        return;
+      }
+      if (tool === "eraser") { liveRef.current = { pn, eraser: true }; eraseAt(pn, pos); return; }
+      liveRef.current = { pn, item: { t: tool === "hl" ? "hl" : "pen", c: color, w: tool === "hl" ? 0.022 : 0.004, pts: [pos] } };
+      redrawPage(pn, liveRef.current.item);
+    },
+    move(pn, e) {
+      const live = liveRef.current; if (!live || live.pn !== pn) return;
+      e.preventDefault();
+      const pos = norm(pn, e);
+      if (live.eraser) { eraseAt(pn, pos); return; }
+      const pts = live.item.pts; const last = pts[pts.length - 1];
+      const pg = pagesRef.current[pn];
+      if (Math.hypot((pos[0] - last[0]) * pg.W, (pos[1] - last[1]) * pg.H) < 1.5) return;
+      pts.push([Number(pos[0].toFixed(4)), Number(pos[1].toFixed(4))]);
+      redrawPage(pn, live.item);
+    },
+    up(pn, e) {
+      const live = liveRef.current; if (!live) return;
+      liveRef.current = null;
+      if (live.item) commit({ ...draftRef.current, [live.pn]: [...(draftRef.current[live.pn] || []), live.item] });
+    },
+  };
+
+  function startAnnotating() {
+    const copy = JSON.parse(JSON.stringify(annotations || {}));
+    setDraft(copy); setHistory([]); setShow(true); setAnnotating(true);
+    onAnnotatingChange && onAnnotatingChange(true);
+  }
+  function stopAnnotating() { setAnnotating(false); liveRef.current = null; onAnnotatingChange && onAnnotatingChange(false); }
+  function cancelAnnotating() {
+    if (history.length && !window.confirm("Discard unsaved notes?")) return;
+    stopAnnotating();
+  }
+  function undo() {
+    if (!history.length) return;
+    setDraft(history[history.length - 1]);
+    setHistory(history.slice(0, -1));
+  }
+  async function saveAnnotations() {
+    if (!onSaveAnnotations) return;
+    setSaving(true);
+    try { await onSaveAnnotations(cleanAnnotations(draftRef.current)); stopAnnotating(); }
+    catch (e) { console.error(e); alert("Could not save the notes. If this is a single-page card, make sure the annotations column (jsonb) exists on the prayers table in Supabase."); }
+    setSaving(false);
+  }
+  async function downloadAnnotated() {
+    if (!pdfBytesRef.current) { alert("The PDF is still loading. Try again in a moment."); return; }
+    setExporting(true);
+    try {
+      const out = await buildAnnotatedPdf(pdfBytesRef.current.slice(0), cleanAnnotations(annotating ? draftRef.current : saved));
+      const blob = new Blob([out], { type: "application/pdf" });
+      const a = document.createElement("a");
+      const href = URL.createObjectURL(blob);
+      a.href = href; a.download = `${(title || "document").replace(/[\\/:*?"<>|]+/g, " ").trim()} (annotated).pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 4000);
+    } catch (e) { console.error(e); alert("Could not create the annotated PDF."); }
+    setExporting(false);
+  }
+
+  const anySaved = hasAnnotations(saved);
+  const showBar = canAnnotate || anySaved;
+  const tb = (on) => ({ background: on ? C.navy : "white", color: on ? "white" : C.navy, border: `1px solid ${on ? C.navy : "#dee2e6"}`, borderRadius: 7, padding: "5px 9px", fontSize: 12, fontWeight: "700", fontFamily: "Raleway,sans-serif", cursor: "pointer" });
+
   return <div style={{flex:1,position:"relative",overflow:"auto",background:"#6c757d22",padding:12}}>
+    {showBar && <div style={{position:"sticky",top:-12,zIndex:2,margin:"-12px -12px 12px",padding:"8px 12px",background:"white",borderBottom:"1px solid #e9ecef",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+      {!annotating && <>
+        {canAnnotate && <button onClick={startAnnotating} disabled={loading||!!error} style={tb(false)}>✏️ Annotate</button>}
+        {anySaved && <button onClick={() => setShow(v => !v)} style={tb(false)}>{show ? "🙈 Hide notes" : "👁 Show notes"}</button>}
+        {anySaved && <button onClick={downloadAnnotated} disabled={exporting} style={tb(false)}>{exporting ? "Preparing…" : "⬇ Annotated PDF"}</button>}
+      </>}
+      {annotating && <>
+        <button onClick={() => setTool("pen")} style={tb(tool === "pen")} title="Pen">✏️ Pen</button>
+        <button onClick={() => setTool("hl")} style={tb(tool === "hl")} title="Highlighter">🖍 Highlight</button>
+        <button onClick={() => setTool("text")} style={tb(tool === "text")} title="Text note">T Text</button>
+        <button onClick={() => setTool("eraser")} style={tb(tool === "eraser")} title="Eraser">⌫ Erase</button>
+        <span style={{display:"inline-flex",gap:4,marginLeft:4}}>
+          {ANNOT_COLORS.map(c => <button key={c} onClick={() => setColor(c)} aria-label={`Color ${c}`} style={{width:22,height:22,borderRadius:"50%",background:c,border:color === c ? `3px solid ${C.gold}` : "2px solid white",boxShadow:"0 0 0 1px #ced4da",cursor:"pointer",padding:0}} />)}
+        </span>
+        <button onClick={undo} disabled={!history.length} style={{...tb(false),opacity:history.length?1:0.5}}>↶ Undo</button>
+        <span style={{marginLeft:"auto",display:"inline-flex",gap:6}}>
+          <button onClick={cancelAnnotating} disabled={saving} style={tb(false)}>Cancel</button>
+          <button onClick={saveAnnotations} disabled={saving} style={{...tb(true),background:C.green,borderColor:C.green}}>{saving ? "Saving…" : "Save"}</button>
+        </span>
+      </>}
+    </div>}
     {loading && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:C.midGray,fontFamily:"Raleway,sans-serif",background:"rgba(255,255,255,0.72)",zIndex:1}}>Rendering PDF…</div>}
     {error && <div style={{padding:16,margin:"0 auto",maxWidth:520,borderRadius:12,background:"#fff6e8",color:C.navy,fontSize:13,fontFamily:"Raleway,sans-serif",textAlign:"center"}}>{error}</div>}
     <div ref={containerRef} style={{width:"100%"}} />
@@ -1332,38 +1585,116 @@ function useViewerKeys({audioCtl,onPrev,onNext}){
   },[]);
 }
 
+// ── Multi-page downloads ─────────────────────────────────────────────────────
+function safeFileName(n){return String(n||"document").replace(/[\\/:*?"<>|]+/g," ").replace(/\s+/g," ").trim()||"document";}
+function saveBytesAs(bytes,filename,mime="application/pdf"){
+  const blob=new Blob([bytes],{type:mime});
+  const href=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=href;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(href),4000);
+}
+async function pagePdfBytes(page,withNotes){
+  const buf=await fetchAsArrayBuffer(pdfFetchCandidates(page.pdf_url));
+  const bytes=new Uint8Array(buf.slice?buf.slice(0):buf);
+  if(withNotes&&hasAnnotations(page.annotations))return await buildAnnotatedPdf(bytes,cleanAnnotations(page.annotations));
+  return bytes;
+}
+async function combinePagesPdf(pages,withNotes){
+  const {PDFDocument}=await loadPdfLibModule();
+  const out=await PDFDocument.create();
+  for(const pg of pages){
+    if(!pg.pdf_url)continue;
+    const src=await PDFDocument.load(await pagePdfBytes(pg,withNotes));
+    const copied=await out.copyPages(src,src.getPageIndices());
+    copied.forEach(p=>out.addPage(p));
+  }
+  if(!out.getPageCount())throw new Error("No PDFs to combine");
+  return await out.save();
+}
+
 // ── Multi-Page Viewer ─────────────────────────────────────────────────────
-function MultiPageViewer({pages,title,onClose}) {
+function MultiPageViewer({pages,title,onClose,canAnnotate=false,onSavePageAnnotations=null}) {
   const [pageIdx,setPageIdx]=useState(0);
   const page=pages[pageIdx]||{};
   const total=pages.length;
   const audioCtl=useRef(null);
-  useViewerKeys({audioCtl,onPrev:()=>setPageIdx(i=>Math.max(0,i-1)),onNext:()=>setPageIdx(i=>Math.min(total-1,i+1))});
+  const [annotating,setAnnotating]=useState(false);
+  const annotatingRef=useRef(false);annotatingRef.current=annotating;
+  const [askNotes,setAskNotes]=useState(null); // "page" | "all" while asking about notes
+  const [dlBusy,setDlBusy]=useState(null);
+  const pagesWithPdf=pages.filter(pg=>pg.pdf_url);
+  async function runDownload(scope,withNotes){
+    setAskNotes(null);setDlBusy(scope);
+    try{
+      if(scope==="page"){
+        const bytes=await pagePdfBytes(page,withNotes);
+        saveBytesAs(bytes,`${safeFileName(`${title} — ${pageLabel(page,pageIdx)}`)}${withNotes?" (annotated)":""}.pdf`);
+      } else {
+        const bytes=await combinePagesPdf(pages,withNotes);
+        saveBytesAs(bytes,`${safeFileName(title)}${withNotes?" (annotated)":""}.pdf`);
+      }
+    }catch(e){console.error(e);alert("Could not download the PDF.");}
+    setDlBusy(null);
+  }
+  function startDownload(scope){
+    const notes=scope==="page"?hasAnnotations(page.annotations):pages.some(pg=>pg.pdf_url&&hasAnnotations(pg.annotations));
+    if(notes)setAskNotes(scope);else runDownload(scope,false);
+  }
+  const goPrev=()=>{if(!annotatingRef.current)setPageIdx(i=>Math.max(0,i-1));};
+  const goNext=()=>{if(!annotatingRef.current)setPageIdx(i=>Math.min(total-1,i+1));};
+  useViewerKeys({audioCtl,onPrev:goPrev,onNext:goNext});
+  // Swipe left/right to turn pages (off while annotating)
+  const swipe=useRef(null);
+  function onTouchStart(e){if(annotating||e.touches.length!==1){swipe.current=null;return;}const t=e.touches[0];swipe.current={x:t.clientX,y:t.clientY,t:Date.now()};}
+  function onTouchEnd(e){
+    const st=swipe.current;swipe.current=null;
+    if(!st||annotating)return;
+    const t=e.changedTouches[0];if(!t)return;
+    const dx=t.clientX-st.x,dy=t.clientY-st.y;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5&&Date.now()-st.t<800){dx<0?goNext():goPrev();}
+  }
   return <div style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.85)",zIndex:3000,display:"flex",flexDirection:"column"}}>
     <div style={{background:C.navy,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
       <span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:"white",fontSize:15,flex:1}}>{title}</span>
+      {page.pdf_url&&<button onClick={()=>startDownload("page")} disabled={!!dlBusy} title="Download this page's PDF" style={{background:"none",border:`1px solid ${C.gold}`,color:C.gold,borderRadius:7,padding:"4px 9px",fontSize:12,fontWeight:"700",fontFamily:"Raleway,sans-serif",cursor:dlBusy?"wait":"pointer",whiteSpace:"nowrap"}}>{dlBusy==="page"?"Preparing…":"⬇ This page"}</button>}
+      {pagesWithPdf.length>1&&<button onClick={()=>startDownload("all")} disabled={!!dlBusy} title="Download all pages as one PDF" style={{background:C.gold,border:`1px solid ${C.gold}`,color:C.navy,borderRadius:7,padding:"4px 9px",fontSize:12,fontWeight:"800",fontFamily:"Raleway,sans-serif",cursor:dlBusy?"wait":"pointer",whiteSpace:"nowrap"}}>{dlBusy==="all"?"Preparing…":"⬇ All pages"}</button>}
       <span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:"rgba(255,255,255,0.7)"}}>{pageLabel(page,pageIdx)===`Page ${pageIdx+1}`?`Page ${pageIdx+1} of ${total}`:`${pageLabel(page,pageIdx)} · ${pageIdx+1} of ${total}`}</span>
       <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
     </div>
     {page.audio_url&&<div style={{background:"#0a2a4a",padding:"8px 16px",flexShrink:0}}>
       <AudioPlayer key={`a-${pageIdx}`} controlRef={audioCtl} url={page.audio_url} name={page.audio_name||`${title} — ${pageLabel(page,pageIdx)}`}/>
     </div>}
-    <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",background:"white"}}>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",background:"white"}}>
       {page.pdf_url
-        ?<PdfCanvasDocument key={`${pageIdx}-${page.pdf_url}`} url={page.pdf_url} title={`${title} — ${pageLabel(page,pageIdx)}`}/>
+        ?<PdfCanvasDocument key={`${pageIdx}-${page.pdf_url}`} url={page.pdf_url} title={`${title} — ${pageLabel(page,pageIdx)}`}
+          annotations={page.annotations||null} canAnnotate={canAnnotate&&!!onSavePageAnnotations}
+          onSaveAnnotations={onSavePageAnnotations?(ann=>onSavePageAnnotations(pageIdx,ann)):null}
+          onAnnotatingChange={setAnnotating}/>
         :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"rgba(255,255,255,0.5)",fontFamily:"Raleway,sans-serif"}}>No PDF for this page</div>}
     </div>
     <div style={{background:C.navy,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-      <button onClick={()=>setPageIdx(i=>Math.max(0,i-1))} disabled={pageIdx===0} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===0?"#1a3a5c":"white",color:pageIdx===0?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===0?"not-allowed":"pointer"}}>← Prev</button>
+      <button onClick={goPrev} disabled={pageIdx===0||annotating} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===0?"#1a3a5c":"white",color:pageIdx===0?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===0?"not-allowed":"pointer"}}>← Prev</button>
       <div style={{display:"flex",gap:6}}>
-        {pages.map((_,i)=><button key={i} onClick={()=>setPageIdx(i)} style={{width:28,height:28,borderRadius:"50%",border:"none",background:i===pageIdx?"white":"rgba(255,255,255,0.2)",color:i===pageIdx?C.navy:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:12,cursor:"pointer"}}>{i+1}</button>)}
+        {pages.map((_,i)=><button key={i} onClick={()=>{if(!annotating)setPageIdx(i);}} style={{width:28,height:28,borderRadius:"50%",border:"none",background:i===pageIdx?"white":"rgba(255,255,255,0.2)",color:i===pageIdx?C.navy:"white",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:12,cursor:"pointer"}}>{i+1}</button>)}
       </div>
-      <button onClick={()=>setPageIdx(i=>Math.min(total-1,i+1))} disabled={pageIdx===total-1} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===total-1?"#1a3a5c":"white",color:pageIdx===total-1?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===total-1?"not-allowed":"pointer"}}>Next →</button>
+      <button onClick={goNext} disabled={pageIdx===total-1||annotating} style={{padding:"8px 20px",borderRadius:8,border:"none",background:pageIdx===total-1?"#1a3a5c":"white",color:pageIdx===total-1?"#456":"#1a3a5c",fontFamily:"Raleway,sans-serif",fontWeight:"700",fontSize:14,cursor:pageIdx===total-1?"not-allowed":"pointer"}}>Next →</button>
     </div>
+    {askNotes&&<div onClick={()=>setAskNotes(null)} style={{position:"fixed",inset:0,background:"rgba(10,30,60,0.6)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,padding:"22px 24px",maxWidth:340,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.35)",fontFamily:"Raleway,sans-serif"}}>
+        <div style={{fontWeight:"800",color:C.navy,fontSize:16,marginBottom:6}}>Download with annotations?</div>
+        <div style={{fontSize:12,color:C.midGray,marginBottom:16}}>{askNotes==="all"?"Some pages have notes.":"This page has notes."}</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>runDownload(askNotes,true)} style={{flex:1,background:C.navy,color:"white",border:"none",borderRadius:8,padding:"9px 0",fontWeight:"800",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>Yes</button>
+          <button onClick={()=>runDownload(askNotes,false)} style={{flex:1,background:"white",color:C.navy,border:`1px solid ${C.navy}`,borderRadius:8,padding:"9px 0",fontWeight:"800",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>No</button>
+        </div>
+        <button onClick={()=>setAskNotes(null)} style={{marginTop:10,background:"none",border:"none",color:C.midGray,fontSize:12,cursor:"pointer",textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>Cancel</button>
+      </div>
+    </div>}
   </div>;
 }
 
-function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
+function PdfModal({url,name,title,audioUrl,audioName,onClose,annotations=null,canAnnotate=false,onSaveAnnotations=null}) {
   const hasAudio=!!audioUrl;
   const displayTitle=title||name||"PDF";
   const downloadLabel=(name||title||"document").replace(/\.pdf$/i,"") + ".pdf";
@@ -1382,7 +1713,7 @@ function PdfModal({url,name,title,audioUrl,audioName,onClose}) {
       {hasAudio&&<div style={{padding:"10px 16px",background:"#f8f9fa",borderBottom:"1px solid #e9ecef",flexShrink:0}}>
         <AudioPlayer controlRef={audioCtl} url={audioUrl} name={audioName}/>
       </div>}
-      <PdfCanvasDocument url={url} title={displayTitle}/>
+      <PdfCanvasDocument url={url} title={displayTitle} annotations={annotations} canAnnotate={canAnnotate&&!!onSaveAnnotations} onSaveAnnotations={onSaveAnnotations}/>
     </div>
   </div>;
 }
@@ -2185,6 +2516,14 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   const effectiveAudio=prayer.audio||selectedDefaultAudio.url||null;
   const effectiveAudioName=prayer.audio_name||selectedDefaultAudio.name||null;
   const effectivePages=resolvePages(prayer.pages,defaultMedia&&defaultMedia.pages,voiceTrack);
+  // Page notes live on the learner's own page list; a card using Default Media pages gets its own list (labels only, media still from Default Media).
+  async function savePageAnnotations(idx,ann){
+    const own=(prayer.pages&&prayer.pages.length)
+      ?prayer.pages
+      :((defaultMedia&&defaultMedia.pages)||[]).map(dp=>({id:dp.id||genId(),label:dp.label,status:prayer.status||"Not Started"}));
+    const next=own.map((p,i)=>i===idx?{...p,annotations:ann}:p);
+    await onLinkUpdate(prayer.id,{pages:next});
+  }
   const hasMultiPage=effectivePages.length>1;
   const hasPdf=!!effectivePdf||hasMultiPage;const hasAudio=!!effectiveAudio;
 
@@ -2206,8 +2545,8 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
   }
 
   if(hidden&&role==="instructor") return <>
-    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
-    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
+    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)} canAnnotate={role==="instructor"} onSavePageAnnotations={savePageAnnotations}/>}
+    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)} annotations={prayer.annotations||null} canAnnotate={role==="instructor"} onSaveAnnotations={ann=>onLinkUpdate(prayer.id,{annotations:ann})}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div style={{background:"white",borderRadius:10,borderLeft:`4px solid ${C.midGray}`,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",marginBottom:8,opacity:0.82,padding:isMobile?"8px 12px":"9px 14px",paddingLeft:isMobile?70:76,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
@@ -2224,8 +2563,8 @@ function PrayerRow({prayer,role,isLead=true,instructorUser=null,onStatusChange,o
     : "white";
   const isNotStarted = (role==="learner"||role==="parent") && prayer.status==="Not Started";
   return <>
-    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)}/>}
-    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
+    {showMultiPage&&hasMultiPage&&<MultiPageViewer pages={effectivePages} title={prayer.name} onClose={()=>setShowMultiPage(false)} canAnnotate={role==="instructor"} onSavePageAnnotations={savePageAnnotations}/>}
+    {showMedia==="pdf"&&effectivePdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={prayer.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowMedia(null)} annotations={prayer.annotations||null} canAnnotate={role==="instructor"} onSaveAnnotations={ann=>onLinkUpdate(prayer.id,{annotations:ann})}/>} 
     {showMedia==="audio"&&effectiveAudio&&!effectivePdf&&<AudioOnlyModal url={effectiveAudio} name={effectiveAudioName} onClose={()=>setShowMedia(null)}/>} 
     <div
       onDragOver={reorder?(e=>{e.preventDefault();e.dataTransfer.dropEffect="move";reorder.onOver();}):undefined}
@@ -2502,7 +2841,8 @@ function PrayerTracker({learnerId,role,isLead=true,instructorUser=null,onDing,me
   const [defaultMediaMap,setDefaultMediaMap]=useState({}); // key: "prayerName|part"
   const [currentLearner,setCurrentLearner]=useState(null);
   // Saved on the learner record (learners.hide_not_started); missing/null = hide
-  const hideNotStarted=currentLearner?currentLearner.hide_not_started!==false:true;
+  // Hide Not Started is switched off (Nov 2026): every learner sees every card. Column learners.hide_not_started is ignored.
+  const hideNotStarted=false;
   const [showMoreLearning,setShowMoreLearning]=useState(false);
 
   function dmKey(name,part){return dmKeyOf(name,part);}
@@ -3229,6 +3569,7 @@ function SmartReview({learnerId}) {
             effective_pdf_name:(rPages[pgIdx]||{}).pdf_name||null,
             effective_audio:(rPages[pgIdx]||{}).audio_url||null,
             effective_audio_name:(rPages[pgIdx]||{}).audio_name||`${p.name} — ${pageLabel(pg,pgIdx)}`,
+            annotations:pg.annotations||null,
             has_default_pdf:false,has_default_audio:false,
             sr_ease:pg.sr_ease,sr_reps:pg.sr_reps,sr_interval:pg.sr_interval,sr_due:pg.sr_due,
             is_assigned:activeLinked.has(p.id),
@@ -3338,7 +3679,7 @@ function SmartReview({learnerId}) {
   const hasPdf=!!effectivePdf;const hasAudio=!!effectiveAudio;
 
   return <div>
-    {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={current.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)}/>}
+    {showPdfModal&&hasPdf&&<PdfModal url={effectivePdf} name={effectivePdfName} title={current.name} audioUrl={effectiveAudio} audioName={effectiveAudioName} onClose={()=>setShowPdfModal(false)} annotations={current.annotations||null}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <h3 style={{margin:0,fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:18}}>🧠 Smart Review</h3>
       <span style={{color:C.midGray,fontSize:13,fontFamily:"Raleway,sans-serif"}}>{idx+1} / {total}</span>
@@ -3735,9 +4076,6 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
       </div>}
       {isLead&&l.category!=="rs_learner"&&<OptionalSectionToggles l={l} onSave={onSave}/>}
       {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input key={`agree-${l.id}`} defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
-      <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
-        <HideNotStartedToggle l={l} onSave={onSave}/>
-      </div>
     </div>}
   </div>;
 }
