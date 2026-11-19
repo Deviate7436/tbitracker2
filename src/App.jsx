@@ -2314,7 +2314,6 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});const [defaultMediaMap,setDefaultMediaMap]=useState({});
   const [showMonthlyUpdates,setShowMonthlyUpdates]=useState(false);
   const [showInstructors,setShowInstructors]=useState(false);
-  const [showParents,setShowParents]=useState(false);
   const isAdmin = instructorUser?.role==="admin";
   function dmKey(name,part){return dmKeyOf(name,part);}
   async function load(){
@@ -2347,7 +2346,6 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
         {isAdmin&&<ServiceOrderPanel learnerId={learnerId}/>}
         {isAdmin&&(!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>)}
         {isAdmin&&<InstructorsPanel open={showInstructors} onToggle={()=>setShowInstructors(v=>!v)}/>}
-        {isAdmin&&<ParentsPanel open={showParents} onToggle={()=>setShowParents(v=>!v)}/>}
         {<div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
           <button onClick={async()=>{if(!showArchived){await loadArchivedLearners?.();}setShowArchived?.(!showArchived);}}
             style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
@@ -2492,112 +2490,48 @@ function InstructorsPanel({open,onToggle}) {
   </div>;
 }
 
-// ── Parents (parent passcodes) ───────────────────────────────────────────────
-function ParentsPanel({open,onToggle}) {
-  const [learners,setLearners]=useState([]);
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState(null);
-  const [editingId,setEditingId]=useState(null);
-  const [editKey,setEditKey]=useState("");
-  const [showAdd,setShowAdd]=useState(false);
-  const [newRow,setNewRow]=useState({learnerId:"",key:""});
-  const [saving,setSaving]=useState(false);
-  async function load(){
-    setLoading(true);setError(null);
-    try{setLearners(((await DB.getLearners())||[]).filter(l=>!l.archived));}
-    catch(e){console.error(e);setError("Could not load learners.");}
-    setLoading(false);
+// ── Passcode ownership check (learners, parents, instructors) ───────────────
+async function findPasscodeOwner(key,exceptParentOfLearnerId=null){
+  const k=normalizeCode(key);
+  const [ls,ins]=await Promise.all([DB.getLearners(),DB.getAllInstructors()]);
+  if((ins||[]).some(i=>i.access_key&&normalizeCode(i.access_key)===k))return "an instructor";
+  for(const l of (ls||[])){
+    if(l.access_key&&normalizeCode(l.access_key)===k)return `${l.name} (learner)`;
+    if(l.id!==exceptParentOfLearnerId&&l.parent_access_key&&normalizeCode(l.parent_access_key)===k)return `${l.name}'s parents`;
   }
-  useEffect(()=>{load();},[]);
-  useEffect(()=>{if(open)load();},[open]);
-  const withKey=learners.filter(l=>l.parent_access_key);
-  const withoutKey=learners.filter(l=>!l.parent_access_key);
-  // A passcode must not match any learner, parent or instructor passcode (other than this learner's own parent passcode)
-  async function keyInUse(key,exceptLearnerId){
-    const k=normalizeCode(key);
-    const [ls,ins]=await Promise.all([DB.getLearners(),DB.getAllInstructors()]);
-    if((ins||[]).some(i=>i.access_key&&normalizeCode(i.access_key)===k))return "an instructor";
-    for(const l of (ls||[])){
-      if(l.access_key&&normalizeCode(l.access_key)===k)return `${l.name} (learner)`;
-      if(l.id!==exceptLearnerId&&l.parent_access_key&&normalizeCode(l.parent_access_key)===k)return `${l.name}'s parents`;
-    }
-    return null;
+  return null;
+}
+function ParentPasscodeField({l,onSave}){
+  const [editing,setEditing]=useState(false);
+  const [val,setVal]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState("");
+  async function save(){
+    const clean=val.trim().toUpperCase();
+    if(clean===(l.parent_access_key||"")){setEditing(false);return;}
+    if(!clean&&!window.confirm(`Remove the parent passcode for ${l.name}? Parents will no longer be able to sign in with it.`))return;
+    setBusy(true);setErr("");
+    try{
+      if(clean){const owner=await findPasscodeOwner(clean,l.id);if(owner){setErr(`Already used by ${owner}.`);setBusy(false);return;}}
+      await DB.updateLearnerFields(l.id,{parent_access_key:clean||null});
+      onSave({...l,parent_access_key:clean||null});
+      setEditing(false);
+    }catch(e){console.error(e);setErr("Could not save.");}
+    setBusy(false);
   }
-  async function setKey(learnerId,key){
-    const clean=(key||"").trim().toUpperCase();
-    if(clean){const used=await keyInUse(clean,learnerId);if(used){setError(`That passcode is already used by ${used}. Choose a different one.`);return false;}}
-    await DB.updateLearnerFields(learnerId,{parent_access_key:clean||null});
-    setLearners(prev=>prev.map(l=>l.id===learnerId?{...l,parent_access_key:clean||null}:l));
-    return true;
-  }
-  async function saveEdit(id){
-    if(!editKey.trim())return;
-    setSaving(true);setError(null);
-    try{if(await setKey(id,editKey))setEditingId(null);}
-    catch(e){console.error(e);setError("Could not save changes.");}
-    setSaving(false);
-  }
-  async function remove(l){
-    if(!window.confirm(`Remove the parent passcode for ${l.name}? Parents will no longer be able to sign in with it.`))return;
-    setError(null);
-    try{await setKey(l.id,null);}catch(e){console.error(e);setError("Could not remove the passcode.");}
-  }
-  async function add(){
-    if(!newRow.learnerId||!newRow.key.trim())return;
-    setSaving(true);setError(null);
-    try{if(await setKey(newRow.learnerId,newRow.key)){setNewRow({learnerId:"",key:""});setShowAdd(false);}}
-    catch(e){console.error(e);setError("Could not add the passcode.");}
-    setSaving(false);
-  }
-  return <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
-    <button onClick={onToggle} style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:16}}>👪</span>
-        <span style={{fontWeight:"800",color:C.navy,fontSize:15}}>Parents</span>
-        <span style={{fontSize:12,background:"#f0f2f5",color:C.midGray,borderRadius:20,padding:"1px 8px",fontWeight:"700"}}>{withKey.length}</span>
+  return <div><div style={LS}>Parent Passcode</div>
+    {editing?<div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <input autoFocus value={val} onChange={e=>{setVal(e.target.value.toUpperCase());setErr("");}} onKeyDown={e=>{if(e.key==="Enter")save();if(e.key==="Escape")setEditing(false);}} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${C.blue}`,fontSize:13,width:110,fontFamily:"Raleway,sans-serif",fontWeight:"700",textTransform:"uppercase"}}/>
+        <button onClick={save} disabled={busy} style={{background:C.blue,color:"white",border:"none",borderRadius:6,padding:"4px 8px",cursor:busy?"wait":"pointer",fontSize:12,fontFamily:"Raleway,sans-serif"}}>{busy?"…":"Save"}</button>
+        <button onClick={()=>{setEditing(false);setErr("");}} style={{background:"none",border:"none",color:C.midGray,cursor:"pointer",fontSize:13}}>✕</button>
       </div>
-      <span style={{color:C.midGray,fontSize:18}}>{open?"▲":"▼"}</span>
-    </button>
-    {open&&<div style={{padding:"14px 20px 20px",borderTop:"1px solid #f0f2f5"}}>
-      {loading?<LoadingSpinner message="Loading parents…"/>:<>
-        {error&&<div style={{background:"#fff0f0",color:C.red,borderRadius:8,padding:"8px 12px",fontSize:12,fontFamily:"Raleway,sans-serif",marginBottom:8}}>{error}</div>}
-        {withKey.length===0&&<div style={{fontSize:13,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No parent passcodes yet.</div>}
-        {withKey.map(l=><div key={l.id} style={{padding:"10px 0",borderBottom:"1px solid #f0f2f5"}}>
-          {editingId===l.id?
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name}</div>
-              <input value={editKey} onChange={e=>setEditKey(e.target.value.toUpperCase())} placeholder="Parent passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
-              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                <Btn small outline color={C.midGray} onClick={()=>setEditingId(null)}>Cancel</Btn>
-                <Btn small color={C.blue} onClick={()=>saveEdit(l.id)} disabled={saving}>Save</Btn>
-              </div>
-            </div>
-          :
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <div style={{minWidth:0}}>
-                <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>(Parents)</span></div>
-                <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {l.parent_access_key}{[l.email1,l.email2,l.email3].filter(Boolean).length?` · ${[l.email1,l.email2,l.email3].filter(Boolean).join(", ")}`:""}</div>
-              </div>
-              <div style={{display:"flex",gap:8,flexShrink:0}}>
-                <Btn small outline color={C.navy} onClick={()=>{setEditingId(l.id);setEditKey(l.parent_access_key||"");setError(null);}}>Edit</Btn>
-                <Btn small danger onClick={()=>remove(l)}>Remove</Btn>
-              </div>
-            </div>
-          }
-        </div>)}
-        {!showAdd?<Btn small color={C.blue} style={{marginTop:12}} onClick={()=>{setShowAdd(true);setError(null);}} disabled={!withoutKey.length}>+ Add Parent Passcode</Btn>:
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:12,padding:"12px",background:"#fafbfc",borderRadius:10,border:"1px solid #e9ecef"}}>
-            <select value={newRow.learnerId} onChange={e=>setNewRow(v=>({...v,learnerId:e.target.value}))} style={{...IS,fontSize:13,padding:"6px 9px"}}>
-              <option value="">Choose a learner…</option>
-              {withoutKey.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <input value={newRow.key} onChange={e=>setNewRow(v=>({...v,key:e.target.value.toUpperCase()}))} placeholder="Parent passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <Btn small outline color={C.midGray} onClick={()=>setShowAdd(false)}>Cancel</Btn>
-              <Btn small color={C.blue} onClick={add} disabled={saving||!newRow.learnerId||!newRow.key.trim()}>Add</Btn>
-            </div>
-          </div>}
-      </>}
+      {err&&<div style={{color:C.red,fontSize:11,fontFamily:"Raleway,sans-serif",marginTop:4}}>{err}</div>}
+    </div>:<div style={{display:"flex",alignItems:"center",gap:8}}>
+      {l.parent_access_key
+        ?<span style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,fontSize:14,letterSpacing:2}}>{l.parent_access_key}</span>
+        :<span style={{fontFamily:"Raleway,sans-serif",color:C.midGray,fontSize:13,fontStyle:"italic"}}>None</span>}
+      <button onClick={()=>{setVal(l.parent_access_key||"");setEditing(true);}} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{l.parent_access_key?"edit":"add"}</button>
     </div>}
   </div>;
 }
@@ -4249,6 +4183,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
             <button onClick={()=>setEditingKey(l.id)} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>edit</button>
           </div>}
         </div>
+        <ParentPasscodeField l={l} onSave={onSave}/>
       </div>
       <LearnerInfoEditor l={l} isMobile={isMobile} onSave={onSave}/>
       {isAdmin&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5",display:"flex",gap:20,flexWrap:"wrap"}}>
