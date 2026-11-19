@@ -153,6 +153,90 @@ async function uploadAudioToStorage(file) {
   return `${SUPA_URL}/storage/v1/object/public/${STORAGE_AUDIO_BUCKET}/${encodedPath}`;
 }
 
+// ── B'nei Mitzvah agreements: private bucket "tbi-agreements" ────────────────
+// Stored in learners.bnei_mitzvah_agreement_url as "sb-private:tbi-agreements/<path>".
+// Plain https links (Google Drive) keep working.
+const STORAGE_AGREEMENT_BUCKET = "tbi-agreements";
+const AGREEMENT_PREFIX = "sb-private:";
+function isPrivateAgreement(v){return typeof v==="string"&&v.startsWith(AGREEMENT_PREFIX);}
+function agreementPath(v){return isPrivateAgreement(v)?v.slice(AGREEMENT_PREFIX.length).replace(new RegExp(`^${STORAGE_AGREEMENT_BUCKET}/`),""):null;}
+function agreementFileName(v){const p=agreementPath(v);if(!p)return null;const last=p.split("/").pop()||"agreement";return decodeURIComponent(last.replace(/^\d+-[a-z0-9]+-/,""));}
+async function uploadAgreementToStorage(file,learnerId){
+  if(!file)throw new Error("No file selected.");
+  const okType=/^(application\/pdf|image\/)/.test(file.type||"")||/\.(pdf|jpe?g|png|heic|heif)$/i.test(file.name||"");
+  if(!okType)throw new Error("Please choose a PDF or a photo (JPG, PNG, HEIC).");
+  const path=`${learnerId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safeStorageFileName(file.name||"agreement.pdf")}`;
+  const res=await fetch(`${SUPA_URL}/storage/v1/object/${STORAGE_AGREEMENT_BUCKET}/${encodeStoragePath(path)}`,{
+    method:"POST",
+    headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`,"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},
+    body:file,
+  });
+  if(!res.ok){const e=await res.text();console.error("Agreement upload error:",e);throw new Error(e||"Upload failed. Check that the tbi-agreements bucket and its policies exist.");}
+  return `${AGREEMENT_PREFIX}${STORAGE_AGREEMENT_BUCKET}/${path}`;
+}
+async function deleteAgreementFromStorage(v){
+  const p=agreementPath(v);if(!p)return;
+  try{await fetch(`${SUPA_URL}/storage/v1/object/${STORAGE_AGREEMENT_BUCKET}/${encodeStoragePath(p)}`,{method:"DELETE",headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});}
+  catch(e){console.warn("Could not delete old agreement file:",e);}
+}
+// Opens an agreement: private files are fetched by the app and shown from memory.
+async function openAgreement(v){
+  if(!v)return;
+  if(!isPrivateAgreement(v)){window.open(v,"_blank","noopener,noreferrer");return;}
+  const name=agreementFileName(v)||"agreement";
+  const isHeic=/\.(heic|heif)$/i.test(name);
+  const win=isHeic?null:window.open("","_blank");
+  try{
+    const res=await fetch(`${SUPA_URL}/storage/v1/object/authenticated/${STORAGE_AGREEMENT_BUCKET}/${encodeStoragePath(agreementPath(v))}`,{headers:{"apikey":SUPA_KEY,"Authorization":`Bearer ${SUPA_KEY}`}});
+    if(!res.ok)throw new Error(await res.text());
+    const blob=await res.blob();
+    const href=URL.createObjectURL(blob);
+    if(win){win.location.href=href;}
+    else{const a=document.createElement("a");a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+    setTimeout(()=>URL.revokeObjectURL(href),60000);
+  }catch(e){
+    console.error(e);if(win)try{win.close();}catch(x){}
+    alert("Could not open the agreement.");
+  }
+}
+function AgreementControl({l,onSave}){
+  const [busy,setBusy]=useState(false);
+  const fileRef=useRef(null);
+  const v=l.bnei_mitzvah_agreement_url||"";
+  const priv=isPrivateAgreement(v);
+  async function save(next){const patch={...l,bnei_mitzvah_agreement_url:next||null};await DB.upsertLearner(patch);onSave(patch);}
+  async function onFile(e){
+    const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
+    if(v&&!window.confirm("Replace the current agreement?"))return;
+    setBusy(true);
+    try{const ref=await uploadAgreementToStorage(f,l.id);await save(ref);if(priv)await deleteAgreementFromStorage(v);}
+    catch(err){alert(err.message||"Upload failed.");}
+    setBusy(false);
+  }
+  async function remove(){
+    if(!window.confirm("Remove the agreement from this learner?"))return;
+    setBusy(true);
+    try{await save(null);if(priv)await deleteAgreementFromStorage(v);}catch(err){alert("Could not remove the agreement.");}
+    setBusy(false);
+  }
+  return <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}>
+    <div style={LS}>B'nei Mitzvah Agreement</div>
+    {priv&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:4}}>
+      <span style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.navy,fontWeight:"700"}}>📄 {agreementFileName(v)}</span>
+      <Btn small outline color={C.navy} onClick={()=>openAgreement(v)}>View</Btn>
+      <Btn small outline color={C.blue} onClick={()=>fileRef.current&&fileRef.current.click()} disabled={busy}>Replace</Btn>
+      <Btn small danger onClick={remove} disabled={busy}>Remove</Btn>
+    </div>}
+    {!priv&&<div style={{display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+      <Btn small color={C.blue} onClick={()=>fileRef.current&&fileRef.current.click()} disabled={busy}>{busy?"Uploading…":"⇪ Upload Agreement"}</Btn>
+      <span style={{fontSize:11,color:C.midGray,fontFamily:"Raleway,sans-serif"}}>PDF or photo</span>
+    </div>}
+    {!priv&&<input key={`agree-${l.id}-${v}`} defaultValue={v} onBlur={async e=>{const nv=e.target.value.trim();if(nv!==v){await save(nv);}}} placeholder="…or paste a link: https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:6}}/>}
+    {busy&&priv&&<div style={{fontSize:11,color:C.midGray,marginTop:4,fontFamily:"Raleway,sans-serif"}}>Working…</div>}
+    <input ref={fileRef} type="file" accept="application/pdf,image/*,.pdf,.heic,.heif" onChange={onFile} style={{display:"none"}}/>
+  </div>;
+}
+
 async function uploadPdfToStorage(file) {
   if(!file) throw new Error("No file selected.");
   const looksLikePdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
@@ -2230,6 +2314,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
   const [prayers,setPrayers]=useState([]);const [partLabels,setPartLabels]=useState({...DEFAULT_PART_LABELS});const [defaultMediaMap,setDefaultMediaMap]=useState({});
   const [showMonthlyUpdates,setShowMonthlyUpdates]=useState(false);
   const [showInstructors,setShowInstructors]=useState(false);
+  const [showParents,setShowParents]=useState(false);
   const isAdmin = instructorUser?.role==="admin";
   function dmKey(name,part){return dmKeyOf(name,part);}
   async function load(){
@@ -2262,6 +2347,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
         {isAdmin&&<ServiceOrderPanel learnerId={learnerId}/>}
         {isAdmin&&(!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>)}
         {isAdmin&&<InstructorsPanel open={showInstructors} onToggle={()=>setShowInstructors(v=>!v)}/>}
+        {isAdmin&&<ParentsPanel open={showParents} onToggle={()=>setShowParents(v=>!v)}/>}
         {<div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
           <button onClick={async()=>{if(!showArchived){await loadArchivedLearners?.();}setShowArchived?.(!showArchived);}}
             style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
@@ -2399,6 +2485,116 @@ function InstructorsPanel({open,onToggle}) {
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn small outline color={C.midGray} onClick={()=>setShowAdd(false)}>Cancel</Btn>
               <Btn small color={C.blue} onClick={addInstructor} disabled={saving}>Add</Btn>
+            </div>
+          </div>}
+      </>}
+    </div>}
+  </div>;
+}
+
+// ── Parents (parent passcodes) ───────────────────────────────────────────────
+function ParentsPanel({open,onToggle}) {
+  const [learners,setLearners]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState(null);
+  const [editingId,setEditingId]=useState(null);
+  const [editKey,setEditKey]=useState("");
+  const [showAdd,setShowAdd]=useState(false);
+  const [newRow,setNewRow]=useState({learnerId:"",key:""});
+  const [saving,setSaving]=useState(false);
+  async function load(){
+    setLoading(true);setError(null);
+    try{setLearners(((await DB.getLearners())||[]).filter(l=>!l.archived));}
+    catch(e){console.error(e);setError("Could not load learners.");}
+    setLoading(false);
+  }
+  useEffect(()=>{load();},[]);
+  useEffect(()=>{if(open)load();},[open]);
+  const withKey=learners.filter(l=>l.parent_access_key);
+  const withoutKey=learners.filter(l=>!l.parent_access_key);
+  // A passcode must not match any learner, parent or instructor passcode (other than this learner's own parent passcode)
+  async function keyInUse(key,exceptLearnerId){
+    const k=normalizeCode(key);
+    const [ls,ins]=await Promise.all([DB.getLearners(),DB.getAllInstructors()]);
+    if((ins||[]).some(i=>i.access_key&&normalizeCode(i.access_key)===k))return "an instructor";
+    for(const l of (ls||[])){
+      if(l.access_key&&normalizeCode(l.access_key)===k)return `${l.name} (learner)`;
+      if(l.id!==exceptLearnerId&&l.parent_access_key&&normalizeCode(l.parent_access_key)===k)return `${l.name}'s parents`;
+    }
+    return null;
+  }
+  async function setKey(learnerId,key){
+    const clean=(key||"").trim().toUpperCase();
+    if(clean){const used=await keyInUse(clean,learnerId);if(used){setError(`That passcode is already used by ${used}. Choose a different one.`);return false;}}
+    await DB.updateLearnerFields(learnerId,{parent_access_key:clean||null});
+    setLearners(prev=>prev.map(l=>l.id===learnerId?{...l,parent_access_key:clean||null}:l));
+    return true;
+  }
+  async function saveEdit(id){
+    if(!editKey.trim())return;
+    setSaving(true);setError(null);
+    try{if(await setKey(id,editKey))setEditingId(null);}
+    catch(e){console.error(e);setError("Could not save changes.");}
+    setSaving(false);
+  }
+  async function remove(l){
+    if(!window.confirm(`Remove the parent passcode for ${l.name}? Parents will no longer be able to sign in with it.`))return;
+    setError(null);
+    try{await setKey(l.id,null);}catch(e){console.error(e);setError("Could not remove the passcode.");}
+  }
+  async function add(){
+    if(!newRow.learnerId||!newRow.key.trim())return;
+    setSaving(true);setError(null);
+    try{if(await setKey(newRow.learnerId,newRow.key)){setNewRow({learnerId:"",key:""});setShowAdd(false);}}
+    catch(e){console.error(e);setError("Could not add the passcode.");}
+    setSaving(false);
+  }
+  return <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
+    <button onClick={onToggle} style={{width:"100%",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",fontFamily:"Raleway,sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:16}}>👪</span>
+        <span style={{fontWeight:"800",color:C.navy,fontSize:15}}>Parents</span>
+        <span style={{fontSize:12,background:"#f0f2f5",color:C.midGray,borderRadius:20,padding:"1px 8px",fontWeight:"700"}}>{withKey.length}</span>
+      </div>
+      <span style={{color:C.midGray,fontSize:18}}>{open?"▲":"▼"}</span>
+    </button>
+    {open&&<div style={{padding:"14px 20px 20px",borderTop:"1px solid #f0f2f5"}}>
+      {loading?<LoadingSpinner message="Loading parents…"/>:<>
+        {error&&<div style={{background:"#fff0f0",color:C.red,borderRadius:8,padding:"8px 12px",fontSize:12,fontFamily:"Raleway,sans-serif",marginBottom:8}}>{error}</div>}
+        {withKey.length===0&&<div style={{fontSize:13,color:C.midGray,fontStyle:"italic",fontFamily:"Raleway,sans-serif"}}>No parent passcodes yet.</div>}
+        {withKey.map(l=><div key={l.id} style={{padding:"10px 0",borderBottom:"1px solid #f0f2f5"}}>
+          {editingId===l.id?
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name}</div>
+              <input value={editKey} onChange={e=>setEditKey(e.target.value.toUpperCase())} placeholder="Parent passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                <Btn small outline color={C.midGray} onClick={()=>setEditingId(null)}>Cancel</Btn>
+                <Btn small color={C.blue} onClick={()=>saveEdit(l.id)} disabled={saving}>Save</Btn>
+              </div>
+            </div>
+          :
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"700",color:C.navy,fontSize:14}}>{l.name} <span style={{fontWeight:"600",color:C.midGray,fontSize:12}}>(Parents)</span></div>
+                <div style={{fontFamily:"Raleway,sans-serif",fontSize:12,color:C.midGray}}>Key: {l.parent_access_key}{[l.email1,l.email2,l.email3].filter(Boolean).length?` · ${[l.email1,l.email2,l.email3].filter(Boolean).join(", ")}`:""}</div>
+              </div>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <Btn small outline color={C.navy} onClick={()=>{setEditingId(l.id);setEditKey(l.parent_access_key||"");setError(null);}}>Edit</Btn>
+                <Btn small danger onClick={()=>remove(l)}>Remove</Btn>
+              </div>
+            </div>
+          }
+        </div>)}
+        {!showAdd?<Btn small color={C.blue} style={{marginTop:12}} onClick={()=>{setShowAdd(true);setError(null);}} disabled={!withoutKey.length}>+ Add Parent Passcode</Btn>:
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:12,padding:"12px",background:"#fafbfc",borderRadius:10,border:"1px solid #e9ecef"}}>
+            <select value={newRow.learnerId} onChange={e=>setNewRow(v=>({...v,learnerId:e.target.value}))} style={{...IS,fontSize:13,padding:"6px 9px"}}>
+              <option value="">Choose a learner…</option>
+              {withoutKey.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <input value={newRow.key} onChange={e=>setNewRow(v=>({...v,key:e.target.value.toUpperCase()}))} placeholder="Parent passcode" style={{...IS,fontSize:13,padding:"6px 9px"}}/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn small outline color={C.midGray} onClick={()=>setShowAdd(false)}>Cancel</Btn>
+              <Btn small color={C.blue} onClick={add} disabled={saving||!newRow.learnerId||!newRow.key.trim()}>Add</Btn>
             </div>
           </div>}
       </>}
@@ -3740,7 +3936,7 @@ function ParentHeaderCard({learner,isMobile,formatServiceDate}) {
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
         <a href="https://docs.google.com/document/d/12jHD6po6KJkZic_GymbUnPi0NO_pUOQ9ajiPR6EH8WA/edit?usp=sharing" target="_blank" rel="noopener noreferrer" style={linkBtn}>📅 Important Dates</a>
-        {learner.bnei_mitzvah_agreement_url&&<a href={learner.bnei_mitzvah_agreement_url} target="_blank" rel="noopener noreferrer" style={linkBtn}>📄 B'nei Mitzvah Agreement</a>}
+        {learner.bnei_mitzvah_agreement_url&&<a href={isPrivateAgreement(learner.bnei_mitzvah_agreement_url)?"#":learner.bnei_mitzvah_agreement_url} onClick={e=>{if(isPrivateAgreement(learner.bnei_mitzvah_agreement_url)){e.preventDefault();openAgreement(learner.bnei_mitzvah_agreement_url);}}} target="_blank" rel="noopener noreferrer" style={linkBtn}>📄 B'nei Mitzvah Agreement</a>}
       </div>
       {cdText&&<div style={{background:learner.category==="rs_learner"?C.lightGreen:C.lightBlue,borderRadius:10,padding:"6px 12px",textAlign:"center",flexShrink:0}}>
         <div style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.blue,fontSize:20,lineHeight:1}}>{cdText}</div>
@@ -4075,7 +4271,7 @@ function InstructorLearnerCard({l,isMobile,formatLastSignedIn,formatServiceDate,
         </div>
       </div>}
       {isLead&&l.category!=="rs_learner"&&<OptionalSectionToggles l={l} onSave={onSave}/>}
-      {isLead&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f0f2f5"}}><div style={LS}>B'nei Mitzvah Agreement URL</div><input key={`agree-${l.id}`} defaultValue={l.bnei_mitzvah_agreement_url||""} onBlur={async e=>{const v=e.target.value.trim();if(v!==(l.bnei_mitzvah_agreement_url||"")){const patch={...l,bnei_mitzvah_agreement_url:v||null};await DB.upsertLearner(patch);onSave(patch);}}} placeholder="https://docs.google.com/…" style={{...IS,fontSize:12,marginTop:4}}/></div>}
+      {isLead&&<AgreementControl l={l} onSave={onSave}/>}
     </div>}
   </div>;
 }
