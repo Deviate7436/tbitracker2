@@ -459,7 +459,8 @@ function getDefaultAudioForVoice(defaultMedia, voiceTrack) {
   return lower.url ? lower : higher;
 }
 
-async function sendAssignmentEmail({learner, assignment}) {
+function escHtml(t){return String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+async function sendAssignmentEmail({learner, assignment, linked=[]}) {
   await ensureInstructorEmailCache();
   const replyTo = instructorEmails(learner.instructor);
   const emails = [learner.email1, learner.email2, learner.email3].filter(Boolean);
@@ -468,12 +469,16 @@ async function sendAssignmentEmail({learner, assignment}) {
   const subtaskHtml = subtasks.length
     ? `<ul style="margin:8px 0 0;padding-left:20px;">${subtasks.map(s=>`<li style="font-size:14px;color:#444;margin-bottom:4px;">${s.text}</li>`).join("")}</ul>`
     : "";
+  const linkedHtml = linked.length
+    ? `<p style="font-size:14px;color:#1a3a5c;margin:12px 0 0;"><strong>Practice:</strong> ${linked.map(x=>escHtml(x.name)+(x.page!=null&&x.page!==""?` (p. ${escHtml(x.page)})`:"")).join(", ")}</p>`
+    : "";
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
       <h2 style="color:#1a3a5c;">New Assignment for ${learner.name}</h2>
       <div style="background:#f8f9fa;border-radius:8px;padding:20px;margin:16px 0;">
         <p style="font-size:16px;font-weight:600;margin:0 0 6px;">${assignment.text}</p>
         <p style="color:#6c757d;margin:0;font-size:13px;">Date: ${assignment.date}</p>
+        ${linkedHtml}
         ${subtaskHtml}
       </div>
       <a href="${window.location.origin}" style="display:inline-block;background:#1B9AD6;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open Tracker</a>
@@ -2343,6 +2348,7 @@ function SettingsModal({learnerId,onClose,onMediaChange,archivedLearners,showArc
           </div>
           <Btn small color={C.blue} onClick={()=>setShowMonthlyUpdates(true)}>Generate Updates</Btn>
         </div>}
+        {isAdmin&&<ExportAssignmentsPanel/>}
         {isAdmin&&<ServiceOrderPanel learnerId={learnerId}/>}
         {isAdmin&&(!learnerId?<ErrorBanner message="Select a learner first to manage the prayer/reading media list."/>:loading?<LoadingSpinner message="Loading settings…"/>:error?<ErrorBanner message={error} onRetry={load}/>:<DefaultMediaControlPanel prayers={prayers} partLabels={partLabels} defaultMediaMap={defaultMediaMap} onSetDefaultMedia={handleSetDefaultMedia}/>)}
         {isAdmin&&<InstructorsPanel open={showInstructors} onToggle={()=>setShowInstructors(v=>!v)}/>}
@@ -2533,6 +2539,61 @@ function ParentPasscodeField({l,onSave}){
         :<span style={{fontFamily:"Raleway,sans-serif",color:C.midGray,fontSize:13,fontStyle:"italic"}}>None</span>}
       <button onClick={()=>{setVal(l.parent_access_key||"");setEditing(true);}} style={{background:"none",border:"none",color:C.blue,cursor:"pointer",fontSize:11,textDecoration:"underline",fontFamily:"Raleway,sans-serif"}}>{l.parent_access_key?"edit":"add"}</button>
     </div>}
+  </div>;
+}
+
+// ── Export assignments (CSV) ─────────────────────────────────────────────────
+function csvCell(v){const t=String(v??"");return /[",\n\r]/.test(t)?`"${t.replace(/"/g,'""')}"`:t;}
+async function exportAssignmentsCsv(includeArchived){
+  const [learners,assigns,prayers]=await Promise.all([
+    DB.getLearners(),
+    sb("assignments?select=*&order=date.desc"),
+    sb("prayers?select=id,name,status,learner_id"),
+  ]);
+  const lById={};(learners||[]).forEach(l=>{lById[l.id]=l;});
+  const pById={};(prayers||[]).forEach(p=>{pById[p.id]=p;});
+  const head=["Learner","Category","Instructor","Service date","Assignment date","Created","Assignment","Done","Subtasks done","Subtasks","Linked prayers"];
+  const rows=[head];
+  (assigns||[]).forEach(a=>{
+    const l=lById[a.learner_id];if(!l)return;
+    if(l.archived&&!includeArchived)return;
+    const subs=a.subtasks||[];
+    const linked=(a.linked_prayer_ids||[]).map(id=>pById[id]).filter(p=>p&&!isRetiredPrayer(p)).map(p=>`${p.name} (${p.status||"Not Started"})`);
+    rows.push([
+      l.name,l.category==="rs_learner"?"RS Learner":"Bnei Mitzvah",l.instructor||"",l.date_of_service||"",
+      a.date||"",(a.created_at||"").slice(0,10),a.text||"",a.done?"Yes":"No",
+      subs.length?`${subs.filter(x=>x.done).length} of ${subs.length}`:"",
+      subs.map(x=>`${x.done?"[x]":"[ ]"} ${x.text}`).join("; "),
+      linked.join("; "),
+    ]);
+  });
+  rows.sort((x,y)=>x===head?-1:y===head?1:(String(x[0]).localeCompare(String(y[0]))||String(y[4]).localeCompare(String(x[4]))));
+  const csv="\uFEFF"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
+  saveBytesAs(new TextEncoder().encode(csv),`tbi-assignments-${new Date().toISOString().slice(0,10)}.csv`,"text/csv;charset=utf-8");
+  return rows.length-1;
+}
+function ExportAssignmentsPanel(){
+  const [incArchived,setIncArchived]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
+  async function run(){
+    setBusy(true);setMsg("");
+    try{const n=await exportAssignmentsCsv(incArchived);setMsg(`${n} assignment${n!==1?"s":""} exported.`);}
+    catch(e){console.error(e);setMsg("Export failed.");}
+    setBusy(false);
+  }
+  return <div style={{background:"white",borderRadius:14,padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:"1px solid #e9ecef"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <span style={{fontSize:16}}>📊</span>
+      <span style={{fontWeight:"800",color:C.navy,fontSize:15,fontFamily:"Raleway,sans-serif"}}>Export Assignments</span>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.midGray,fontFamily:"Raleway,sans-serif",cursor:"pointer"}}>
+        <input type="checkbox" checked={incArchived} onChange={e=>setIncArchived(e.target.checked)} style={{accentColor:C.navy}}/>Include archived
+      </label>
+      {msg&&<span style={{fontSize:12,color:C.green,fontFamily:"Raleway,sans-serif"}}>{msg}</span>}
+      <Btn small color={C.blue} onClick={run} disabled={busy}>{busy?"Preparing…":"⬇ Export CSV"}</Btn>
+    </div>
   </div>;
 }
 
@@ -3350,7 +3411,7 @@ function PracticeSessions({learnerId,role}) {
 }
 
 // ── Assignment Row ─────────────────────────────────────────────────────────
-function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRemove, onSaveAssignment, onUpdateSubtasks, onEmail, emailStatus}) {
+function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRemove, onSaveAssignment, onUpdateSubtasks, onEmail, emailStatus, linked=[], onOpenLinked=null}) {
   const [editing,setEditing]=useState(false);
   const [editDate,setEditDate]=useState(a.date||"");
   const [editText,setEditText]=useState(a.text||"");
@@ -3399,6 +3460,17 @@ function AssignmentRow({a, role, isLead=true, learner, hasEmails, onToggle, onRe
             <span style={{color:C.midGray,fontSize:12,fontFamily:"Raleway,sans-serif"}}>{a.date}</span>
             {subs.length>0&&<span style={{fontSize:11,color:C.purple,border:`1px solid ${C.purple}44`,borderRadius:10,padding:"1px 8px",fontFamily:"Raleway,sans-serif"}}>{subDone}/{subs.length}</span>}
           </div>
+          {linked.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8,opacity:a.done?0.55:1}}>
+            {linked.map(x=>{
+              const hasMedia=!!(x.pdf||x.audio||(x.pages&&x.pages.some(pg=>pg.pdf_url||pg.audio_url)));
+              const dot=STATUS_COLORS[x.status]||STATUS_COLORS["Not Started"];
+              const label=<><span aria-hidden="true" style={{width:8,height:8,borderRadius:"50%",background:dot,flexShrink:0}}/>{x.name}{x.page!=null&&x.page!==""?<span style={{color:C.midGray,fontWeight:"600"}}>p. {x.page}</span>:null}</>;
+              const base={display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:20,border:`1.5px solid ${hasMedia?C.blue+"66":"#dee2e6"}`,background:hasMedia?C.lightBlue:"white",color:C.navy,fontFamily:"Raleway,sans-serif",fontSize:11,fontWeight:"700"};
+              return hasMedia&&onOpenLinked
+                ?<button key={x.id} onClick={()=>onOpenLinked(x)} title={`${x.status} · open`} style={{...base,cursor:"pointer"}}>{label}<span aria-hidden="true">▸</span></button>
+                :<span key={x.id} title={x.status} style={base}>{label}</span>;
+            })}
+          </div>}
           {subs.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
             {subs.map(s=>{const canToggleSub=role==="learner"||canManage;return <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:6,background:s.done?"#f0f2f5":"#fafbfc",border:"1px solid #e9ecef"}}>
               <input type="checkbox" checked={s.done} disabled={!canToggleSub} onChange={async()=>{if(!canToggleSub)return;const u=subs.map(x=>x.id===s.id?{...x,done:!x.done}:x);await onUpdateSubtasks(a.id,u);}} style={{accentColor:C.blue,width:14,height:14,cursor:canToggleSub?"pointer":"not-allowed",flexShrink:0,opacity:canToggleSub?1:0.35}}/>
@@ -3511,7 +3583,31 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   },[draftOwner,learnerId,newDate,newText,newSubInput,newSubtasks,newLinkedPrayers]);
   function clearDraft(){setNewDate("");setNewText("");setNewSubInput("");setNewSubtasks([]);setNewLinkedPrayers([]);}
 
-  async function load(){setLoading(true);try{const r=await DB.getAssignments(learnerId);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
+  const [prayerInfo,setPrayerInfo]=useState({});   // id -> {id,name,status,page,part,order,pdf,pdfName,audio,audioName,pages}
+  const [openLinked,setOpenLinked]=useState(null);
+  async function loadPrayerInfo(){
+    try{
+      const [rows,dmRows,lr]=await Promise.all([DB.getPrayers(learnerId),DB.getDefaultMedia().catch(()=>[]),DB.getLearner(learnerId).catch(()=>null)]);
+      const lrow=Array.isArray(lr)?lr[0]:lr;
+      const voice=(lrow&&lrow.voice_track)||"lower";
+      const dmMap={};(dmRows||[]).forEach(d=>{dmMap[dmKey(d.prayer_name,d.part)]=d;});
+      const info={};
+      (rows||[]).filter(p=>!p.hidden_from_learner&&!isInHiddenSection(p,lrow)).forEach(p=>{
+        const dm=lookupDefaultMedia(dmMap,p.name,p.part)||{};
+        const da=getDefaultAudioForVoice(dm,voice);
+        info[p.id]={id:p.id,name:p.name,status:p.status||"Not Started",page:p.page,part:Number(p.part)||0,order:p.sort_order??0,
+          pdf:p.pdf||dm.pdf||null,pdfName:p.pdf_name||dm.pdf_name||null,
+          audio:p.audio||da.url||null,audioName:p.audio_name||da.name||null,
+          pages:resolvePages(p.pages,dm.pages,voice),annotations:p.annotations||null};
+      });
+      setPrayerInfo(info);
+    }catch(e){console.error("Could not load linked prayers:",e);}
+  }
+  function linkedFor(a){
+    return (a.linked_prayer_ids||[]).map(id=>prayerInfo[id]).filter(Boolean)
+      .sort((x,y)=>(x.part-y.part)||(x.order-y.order)||(pageSortVal(x.page)-pageSortVal(y.page)));
+  }
+  async function load(){setLoading(true);try{const [r]=await Promise.all([DB.getAssignments(learnerId),loadPrayerInfo()]);setAssignments(r||[]);}catch(e){setError("Failed to load assignments.");}setLoading(false);}
   useEffect(()=>{load();},[learnerId]);
 
   function addNewSubtask(){
@@ -3523,7 +3619,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   async function emailAssignment(a,{quiet=false}={}){
     if(!learner){if(!quiet)setEmailStatus(s=>({...s,[a.id]:"error:No learner data."}));return {ok:false,error:"No learner data."};}
     if(!quiet)setEmailStatus(s=>({...s,[a.id]:"sending"}));
-    const result=await sendAssignmentEmail({learner,assignment:a});
+    const result=await sendAssignmentEmail({learner,assignment:a,linked:linkedFor(a)});
     if(result.ok){
       setEmailStatus(s=>({...s,[a.id]:"sent"}));
       setTimeout(()=>setEmailStatus(s=>({...s,[a.id]:undefined})),3000);
@@ -3561,7 +3657,12 @@ function Assignments({learnerId,role,learner,isLead=true}) {
   if(error) return <ErrorBanner message={error} onRetry={load}/>;
 
   return <div>
-    {confirmId&&<ConfirmModal message="Delete this assignment?" onConfirm={()=>{remove(confirmId);setConfirmId(null);}} onCancel={()=>setConfirmId(null)}/>}    
+    {confirmId&&<ConfirmModal message="Delete this assignment?" onConfirm={()=>{remove(confirmId);setConfirmId(null);}} onCancel={()=>setConfirmId(null)}/>}
+    {openLinked&&(openLinked.pages&&openLinked.pages.length>1
+      ?<MultiPageViewer pages={openLinked.pages} title={openLinked.name} onClose={()=>setOpenLinked(null)}/>
+      :openLinked.pdf
+        ?<PdfModal url={openLinked.pdf} name={openLinked.pdfName} title={openLinked.name} audioUrl={openLinked.audio} audioName={openLinked.audioName} annotations={openLinked.annotations} onClose={()=>setOpenLinked(null)}/>
+        :<AudioOnlyModal url={openLinked.audio} name={openLinked.audioName||openLinked.name} onClose={()=>setOpenLinked(null)}/>)}
     <h3 style={{fontFamily:"Raleway,sans-serif",fontWeight:"800",color:C.navy,margin:"0 0 16px"}}>Assignments</h3>
     {role==="instructor"&&isLead&&<div style={{background:"white",borderRadius:14,padding:"20px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"160px 1fr",gap:10,marginBottom:10}}>
@@ -3598,6 +3699,7 @@ function Assignments({learnerId,role,learner,isLead=true}) {
           onToggle={toggle} onRemove={setConfirmId}
           onSaveAssignment={saveAssignment} onUpdateSubtasks={updateSubtasks}
           onEmail={emailAssignment}
+          linked={linkedFor(a)} onOpenLinked={setOpenLinked}
         />)}
       </div>}
   </div>;
